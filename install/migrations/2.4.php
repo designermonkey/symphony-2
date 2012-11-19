@@ -35,6 +35,9 @@
 			if(version_compare(self::$existing_version, '2.3.1', '<=')) {
 				// Add missing config value for index view string length
 				Symphony::Configuration()->set('cell_truncation_length', '75', 'symphony');
+
+				// Run Configuration Migration
+				Symphony::Configuration()->migrateToXML();
 			}
 		}
 
