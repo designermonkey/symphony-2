@@ -209,7 +209,7 @@
 			$xmlDoc->load($file);
 			
 			$xpath = new DOMXPath($xmlDoc);
-			$xpath->registerNamespace('s','http://symphony-cms.com/2012/03/config');
+			$xpath->registerNamespace('s','http://symphony-cms.com/schemas/configuration/1.0');
 			$groupNodes = $xpath->query('/s:configuration/s:group');
 			
 			foreach($groupNodes as $groupNode) {
@@ -270,7 +270,7 @@
 				$file = CONFIG;
 			}
 
-			$string = '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . '<configuration xmlns="http://symphony-cms.com/2012/03/config">' . (string)$this . "\n\n</configuration>\n";
+			$string = '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . '<configuration xmlns="http://symphony-cms.com/schemas/configuration/1.0">' . (string)$this . "\n\n</configuration>\n";
 
 			return General::writeFile($file, $string, $permissions);
 		}
