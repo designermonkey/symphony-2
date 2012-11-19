@@ -39,7 +39,6 @@
 		 */
 		public function __construct($forceLowerCase=false){
 			$this->_forceLowerCase = $forceLowerCase;
-			$this->_migrateToXML();
 			$this->read();
 		}
 
@@ -280,7 +279,7 @@
 		 * This will load the config.php file and transform the settings to XML
 		 * The method can be removed when backwards-compatibility with 2.2.x line is broken.
 		 */
-		private function _migrateToXML() {
+		public static function migrateToXML() {
 			if(file_exists(MANIFEST . '/config.php')) {
 				include(MANIFEST . '/config.php');
 				foreach($settings as $group=>$items) {
