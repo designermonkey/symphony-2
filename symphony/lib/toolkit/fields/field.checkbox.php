@@ -186,23 +186,27 @@
 		Import:
 	-------------------------------------------------------------------------*/
 
-		/**
-		 * Give the field some data and ask it to return a value.
-		 *
-		 * @param mixed $data
-		 * @param integer $entry_id
-		 * @return array
-		 */
-		public function prepareImportValue($data, $entry_id = null) {
+		public function getImportModes() {
 			return array(
-				'value' =>	(
-								$data === true
-								|| strtolower($data) == 'yes'
-								|| strtolower($data) == 'on'
-									? 'yes'
-									: 'no'
-							)
+				'getValue' =>		ImportableField::STRING_VALUE,
+				'getPostdata' =>	ImportableField::ARRAY_VALUE
 			);
+		}
+
+		public function prepareImportValue($data, $mode, $entry_id = null) {
+			$value = $status = $message = null;
+			$modes = (object)$this->getImportModes();
+
+			$value = $this->processRawFieldData($data, $status, $message, true, $entry_id);
+
+			if($mode === $modes->getValue) {
+				return $value['value'];
+			}
+			else if($mode === $modes->getPostdata) {
+				return $value;
+			}
+
+			return null;
 		}
 
 	/*-------------------------------------------------------------------------

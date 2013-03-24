@@ -284,7 +284,11 @@
 			$section_id = $this->_context[1];
 
 			if(!$section = SectionManager::fetch($section_id)) {
-				Administration::instance()->customError(__('Unknown Section'), __('The Section, %s, could not be found.', array($section_id)));
+				Administration::instance()->throwCustomError(
+					__('The Section, %s, could not be found.', array($section_id)),
+					__('Unknown Section'),
+					Page::HTTP_STATUS_NOT_FOUND
+				);
 			}
 			$meta = $section->get();
 			$section_id = $meta['id'];
@@ -491,21 +495,25 @@
 		}
 
 		public function __actionIndex() {
-			/**
-			 * Extensions can listen for any custom actions that were added
-			 * through `AddCustomPreferenceFieldsets` or `AddCustomActions`
-			 * delegates.
-			 *
-			 * @delegate CustomActions
-			 * @since Symphony 2.3.2
-			 * @param string $context
-			 * '/blueprints/sections/'
-			 */
-			Symphony::ExtensionManager()->notifyMembers('CustomActions', '/blueprints/sections/');
-
 			$checked = (is_array($_POST['items'])) ? array_keys($_POST['items']) : null;
 
 			if(is_array($checked) && !empty($checked)){
+				/**
+				 * Extensions can listen for any custom actions that were added
+				 * through `AddCustomPreferenceFieldsets` or `AddCustomActions`
+				 * delegates.
+				 *
+				 * @delegate CustomActions
+				 * @since Symphony 2.3.2
+				 * @param string $context
+				 *  '/blueprints/sections/'
+				 * @param array $checked
+				 *  An array of the selected rows. The value is usually the ID of the
+				 *  the associated object. 
+				 */
+				Symphony::ExtensionManager()->notifyMembers('CustomActions', '/blueprints/sections/', array(
+					'checked' => $checked
+				));
 
 				if($_POST['with-selected'] == 'delete') {
 					/**
@@ -586,10 +594,10 @@
 
 				// Check for duplicate section handle
 				elseif($edit) {
+					$s = SectionManager::fetchIDFromHandle(Lang::createHandle($meta['name']));
 					if(
-						$meta['name'] != $existing_section->get('name')
-						&& $s = SectionManager::fetchIDFromHandle(Lang::createHandle($meta['name']))
-						&& !is_null($s) && $s != $section_id
+						$meta['name'] !== $existing_section->get('name')
+						&& !is_null($s) && $s !== $section_id
 					) {
 						$this->_errors['name'] = __('A Section with the name %s already exists', array('<code>' . $meta['name'] . '</code>'));
 						$canProceed = false;

@@ -75,12 +75,16 @@
 
 			if(isset($_POST['fields'])) {
 				$fields = $_POST['fields'];
+
+				if($this->_context[0] == 'edit') {
+					$isEditing = true;
+				}
 			}
 
 			else if($this->_context[0] == 'edit' || $this->_context[0] == 'info') {
 				$isEditing = true;
 				$handle = $this->_context[1];
-				$existing =& EventManager::create($handle);
+				$existing = EventManager::create($handle);
 				$about = $existing->about();
 
 				if ($this->_context[0] == 'edit' && !$existing->allowEditorToParse()) {
@@ -106,6 +110,14 @@
 						$fields['filters'] = $existing->eParamFILTERS;
 					}
 				}
+			}
+
+			// Handle name on edited changes, or from reading an edited datasource
+			if(isset($about['name'])) {
+				$name = $about['name'];
+			}
+			else if(isset($fields['name'])) {
+				$name = $fields['name'];
 			}
 
 			$this->setPageType('form');
@@ -145,7 +157,7 @@
 				$source = isset($fields['source']) ? $fields['source'] : null;
 
 				if(is_array($sections) && !empty($sections)) {
-					$section_options = array('label' => __('Sections'), 'data-label' => 'Sections', 'options' => array());
+					$section_options = array('label' => __('Sections'), 'options' => array());
 					foreach($sections as $s) {
 						$section_options['options'][] = array($s->get('id'), $source == $s->get('id'), General::sanitize($s->get('name')));
 					}
@@ -186,13 +198,11 @@
 				$fieldset->appendChild($group);
 				$this->Form->appendChild($fieldset);
 
-			// Filters
-				$div = new XMLElement('div');
-				$div->setAttribute('id', 'Sections');
-				$div->setAttribute('class', 'pickable');
-
+				// Filters
 				$fieldset = new XMLElement('fieldset');
-				$fieldset->setAttribute('class', 'settings');
+				$fieldset->setAttribute('id', 'sections');
+				$fieldset->setAttribute('class', 'settings pickable');
+				$fieldset->setAttribute('data-relation', 'event-context');
 				$fieldset->appendChild(new XMLElement('legend', __('Filters')));
 				$p = new XMLElement('p',
 					__('Event Filters add additional conditions or actions to an event.')
@@ -224,9 +234,8 @@
 				));
 
 				$fieldset->appendChild(Widget::Select('fields[filters][]', $options, array('multiple' => 'multiple')));
-				$div->appendChild($fieldset);
 
-				$this->Form->appendChild($div);
+				$this->Form->appendChild($fieldset);
 
 			// Providers
 				if(!empty($providers)) {
@@ -270,14 +279,22 @@
 				$fieldset = new XMLElement('fieldset');
 				$fieldset->setAttribute('class', 'settings');
 				$fieldset->appendChild(new XMLElement('legend', __('Version')));
-				if(preg_match('/^\d+(\.\d+)*$/', $about['version'])) {
+				$version = array_key_exists('version', $about) ? $about['version'] : null;
+				$release_date = array_key_exists('release-date', $about) ? $about['release-date'] : filemtime(EventManager::__getDriverPath($handle));
+
+				if(preg_match('/^\d+(\.\d+)*$/', $version)) {
 					$fieldset->appendChild(
-						new XMLElement('p', __('%1$s released on %2$s', array($about['version'], DateTimeObj::format($about['release-date'], __SYM_DATE_FORMAT__))))
+						new XMLElement('p', __('%1$s released on %2$s', array($version, DateTimeObj::format($release_date, __SYM_DATE_FORMAT__))))
+					);
+				}
+				else if(!is_null($version)) {
+					$fieldset->appendChild(
+						new XMLElement('p', __('Created by %1$s at %2$s', array($version, DateTimeObj::format($release_date, __SYM_DATE_FORMAT__))))
 					);
 				}
 				else {
 					$fieldset->appendChild(
-						new XMLElement('p', __('Created by %1$s at %2$s', array($about['version'], DateTimeObj::format($about['release-date'], __SYM_DATE_FORMAT__))))
+						new XMLElement('p', __('Last modified on %s', array(DateTimeObj::format($release_date, __SYM_DATE_FORMAT__))))
 					);
 				}
 				$this->Form->appendChild($fieldset);

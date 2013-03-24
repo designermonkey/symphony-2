@@ -18,7 +18,26 @@
 	 * `TEMPLATE . /datasource.tpl`.
 	 */
 
-	Class DataSource{
+	Class DataSource {
+
+		/**
+		 * A constant that represents if this filter is an AND filter in which
+		 * an Entry must match all these filters. This filter is triggered when
+		 * the filter string contains a ` + `.
+		 *
+		 * @since Symphony 2.3.2
+		 * @var integer
+		 */
+		const FILTER_AND = 1;
+
+		/**
+		 * A constant that represents if this filter is an OR filter in which an
+		 * entry can match any or all of these filters
+		 *
+		 * @since Symphony 2.3.2
+		 * @var integer
+		 */
+		const FILTER_OR = 2;
 
 		/**
 		 * Holds all the environment variables which include parameters set by
@@ -133,7 +152,7 @@
 		 *  Symphony 2.3.1, please use `execute()` instead.
 		 * @see execute()
 		 */
-		public function grab(array &$param_pool=NULL) {
+		public function grab(array &$param_pool = null) {
 			return $this->execute($param_pool);
 		}
 
@@ -148,7 +167,7 @@
 		 * @return XMLElement
 		 *  The XMLElement to add into the XML for a page.
 		 */
-		public function execute(array &$param_pool=NULL) {
+		public function execute(array &$param_pool = null) {
 			$result = new XMLElement($this->dsParamROOTELEMENT);
 
 			try{
@@ -181,10 +200,11 @@
 		 *
 		 * @param string $value
 		 *  The filter string for a field.
-		 * @return DS_FILTER_OR or DS_FILTER_AND
+		 * @return integer
+		 *  DataSource::FILTER_OR or DataSource::FILTER_AND
 		 */
 		public function __determineFilterType($value){
-			return (strpos($value, '+') === false) ? DS_FILTER_OR : DS_FILTER_AND;
+			return preg_match('/\s+\+\s+/', $string) ? DataSource::FILTER_AND : DataSource::FILTER_OR;
 		}
 
 		/**
@@ -297,7 +317,6 @@
 			if(isset($this->dsParamREDIRECTONEMPTY) && $this->dsParamREDIRECTONEMPTY == 'yes' && $this->_force_empty_result){
 				throw new FrontendPageNotFoundException;
 			}
-
 		}
 
 		/**
@@ -456,6 +475,9 @@
 	/**
 	 * A constant that represents if this filter is an AND filter in which
 	 * an Entry must match all these filters
+	 *
+	 * @deprecated This constant has been deprecated and will be removed in
+	 *  Symphony 2.4. Use DataSource::FILTER_AND instead
 	 * @var integer
 	 */
 	define_safe('DS_FILTER_AND', 1);
@@ -463,6 +485,9 @@
 	/**
 	 * A constant that represents if this filter is an OR filter in which an
 	 * entry can match any or all of these filters
+	 *
+	 * @deprecated This constant has been deprecated and will be removed in
+	 *  Symphony 2.4. Use DataSource::FILTER_AND instead
 	 * @var integer
 	 */
 	define_safe('DS_FILTER_OR', 2);

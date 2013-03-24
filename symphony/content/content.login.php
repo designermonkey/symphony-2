@@ -18,9 +18,12 @@
 			$this->addHeaderToPage('Content-Type', 'text/html; charset=UTF-8');
 
 			$this->Html->setElementStyle('html');
-			$this->Html->setDTD('<!DOCTYPE html>'); //PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd"
+			$this->Html->setDTD('<!DOCTYPE html>');
 			$this->Html->setAttribute('lang', Lang::get());
-			$this->addElementToHead(new XMLElement('meta', NULL, array('http-equiv' => 'Content-Type', 'content' => 'text/html; charset=UTF-8')), 0);
+			$this->addElementToHead(new XMLElement('meta', NULL, array('charset' => 'UTF-8')), 0);
+			$this->addElementToHead(new XMLElement('meta', NULL, array('http-equiv' => 'X-UA-Compatible', 'content' => 'IE=edge,chrome=1')), 1);
+			$this->addElementToHead(new XMLElement('meta', NULL, array('name' => 'viewport', 'content' => 'width=device-width, initial-scale=1')), 2);
+
 			$this->addStylesheetToHead(APPLICATION_URL . '/assets/css/symphony.css', 'screen', 30);
 			$this->addStylesheetToHead(APPLICATION_URL . '/assets/css/symphony.forms.css', 'screen', 31);
 			$this->addStylesheetToHead(APPLICATION_URL . '/assets/css/symphony.frames.css', 'screen', 32);
@@ -152,10 +155,7 @@
 
 				// Login Attempted
 				if($action == 'login'):
-					$username = Symphony::Database()->cleanValue($_POST['username']);
-					$password = Symphony::Database()->cleanValue($_POST['password']);
-
-					if(empty($username) || empty($password) || !Administration::instance()->login($username, $password)) {
+					if(empty($_POST['username']) || empty($_POST['password']) || !Administration::instance()->login($_POST['username'], $_POST['password'])) {
 						/**
 						 * A failed login attempt into the Symphony backend
 						 *
@@ -166,7 +166,7 @@
 						 * @param string $username
 						 *  The username of the Author who attempted to login.
 						 */
-						Symphony::ExtensionManager()->notifyMembers('AuthorLoginFailure', '/login/', array('username' => $username));
+						Symphony::ExtensionManager()->notifyMembers('AuthorLoginFailure', '/login/', array('username' => Symphony::Database()->cleanValue($username)));
 						$this->failedLoginAttempt = true;
 					}
 
@@ -181,7 +181,7 @@
 						 * @param string $username
 						 *  The username of the Author who logged in.
 						 */
-						Symphony::ExtensionManager()->notifyMembers('AuthorLoginSuccess', '/login/', array('username' => $username));
+						Symphony::ExtensionManager()->notifyMembers('AuthorLoginSuccess', '/login/', array('username' => Symphony::Database()->cleanValue($username)));
 
 						isset($_POST['redirect']) ? redirect($_POST['redirect']) : redirect(SYMPHONY_URL);
 					}

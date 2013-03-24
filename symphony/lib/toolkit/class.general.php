@@ -301,10 +301,10 @@
 				return $email->send();
 			}
 			catch(EmailGatewayException $e){
-				throw new SymphonyErrorPage('Error sending email. ' . $e->getMessage());
+				Symphony::Engine()->throwCustomError('Error sending email. ' . $e->getMessage());
 			}
 			catch(EmailException $e){
-				throw new SymphonyErrorPage('Error sending email. ' . $e->getMessage());
+				Symphony::Engine()->throwCustomError('Error sending email. ' . $e->getMessage());
 			}
 		}
 
@@ -473,16 +473,28 @@
 		 *  the path containing the directories to create.
 		 * @param integer $mode (optional)
 		 *  the permissions (in octal) of the directories to create. Defaults to 0755
+		 * @param boolean $silent (optional)
+		 *  true if an exception should be raised if an error occurs, false
+		 *  otherwise. this defaults to true.
 		 * @return boolean
 		 */
-		public static function realiseDirectory($path, $mode=0755){
+		public static function realiseDirectory($path, $mode = 0755, $silent = true){
 			if(is_dir($path)) return true;
 
-			$current_umask = umask(0);
-			$success = mkdir($path, intval($mode, 8), true);
-			umask($current_umask);
+			try {
+				$current_umask = umask(0);
+				$success = mkdir($path, intval($mode, 8), true);
+				umask($current_umask);
 
-			return $success;
+				return $success;
+			}
+			catch(Exception $ex) {
+				if($silent === false){
+					throw new Exception(__('Unable to create path - %s', array($path)));
+				}
+
+				return false;
+			}
 		}
 
 		/**
@@ -595,7 +607,7 @@
 
 							if(!is_array($result[$handle][$index])) $result[$handle][$index] = array();
 
-							if(!is_array($pair)) $result[$handle][$index][] = $pair;
+							if(!is_array($pair)) $result[$handle][$index][$key] = $pair;
 							else $result[$handle][$index][array_pop(array_keys($pair))][$key] = array_pop(array_values($pair));
 						}
 					}
@@ -1264,14 +1276,25 @@
 		 * future expansion. Salting the hash comes to mind.
 		 *
 		 * @param string $input
-		 * the string to be hashed
+		 *  the string to be hashed
 		 * @param string $algorithm
-		 * a valid PHP function handle
+		 *  This function supports 'md5', 'sha1' and 'pbkdf2'. Any
+		 *  other algorithm will default to 'pbkdf2'.
 		 * @return string
-		 * the hashed string
+		 *  the hashed string
 		 */
-		public static function hash($input, $algorithm='sha1'){
-			return Cryptography::hash($input, $algorithm);
+		public static function hash($input, $algorithm='sha1') {
+			switch($algorithm) {
+				case 'sha1':
+					return SHA1::hash($input, $algorithm);
+
+				case 'md5':
+					return MD5::hash($input, $algorithm);
+
+				case 'pbkdf2':
+				default:
+					return Crytography::hash($input, $algorithm);
+			}
 		}
 
 		/**

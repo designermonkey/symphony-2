@@ -5,7 +5,7 @@
 	 */
 
 	/**
-	 * The FrontendPage class represents a page of the website that is powered
+	 * The `FrontendPage` class represents a page of the website that is powered
 	 * by Symphony. It takes the current URL and resolves it to a page as specified
 	 * in Symphony which involves deducing the parameters from the URL, ensuring
 	 * this page is accessible and exists, setting the correct Content-Type for the page
@@ -16,9 +16,6 @@
 	 */
 
 	require_once(TOOLKIT . '/class.xsltpage.php');
-	require_once(TOOLKIT . '/class.datasourcemanager.php');
-	require_once(TOOLKIT . '/class.eventmanager.php');
-	require_once(TOOLKIT . '/class.extensionmanager.php');
 
 	Class FrontendPage extends XSLTPage {
 
@@ -154,7 +151,7 @@
 		 * The page source after the XSLT has transformed this page's XML. This would be
 		 * exactly the same as the 'view-source' from your browser
 		 */
-		public function generate($page) {
+		public function generate($page = null) {
 			$full_generate = true;
 			$devkit = null;
 			$output = null;
@@ -218,10 +215,10 @@
 					}
 
 					if(in_array('404', $this->_pageData['type'])){
-						$this->addHeaderToPage('Status', '404 Not Found', 404);
+						$this->setHttpStatus(self::HTTP_STATUS_NOT_FOUND);
 					}
-					elseif(in_array('403', $this->_pageData['type'])){
-						$this->addHeaderToPage('Status', '403 Forbidden', 403);
+					else if(in_array('403', $this->_pageData['type'])){
+						$this->setHttpStatus(self::HTTP_STATUS_FORBIDDEN);
 					}
 				}
 
@@ -234,11 +231,8 @@
 				Symphony::ExtensionManager()->notifyMembers('FrontendPreRenderHeaders', '/frontend/');
 
 				$backup_param = $this->_param;
-
 				$this->_param['current-query-string'] = General::wrapInCDATA($this->_param['current-query-string']);
-
 				$output = parent::generate();
-
 				$this->_param = $backup_param;
 
 				/**
@@ -260,8 +254,13 @@
 						$errstr .= 'Line: ' . $val['line'] . ' - ' . $val['message'] . PHP_EOL;
 					}
 
-					GenericExceptionHandler::$enabled = true;
-					throw new SymphonyErrorPage(trim($errstr), NULL, 'xslt', array('proc' => clone $this->Proc));
+					Frontend::instance()->throwCustomError(
+						trim($errstr),
+						__('XSLT Processing Error'),
+						Page::HTTP_STATUS_ERROR,
+						'xslt',
+						array('proc' => clone $this->Proc)
+					);
 				}
 
 				Symphony::Profiler()->sample('Page creation complete');
@@ -617,12 +616,10 @@
 				$row = PageManager::fetchPageByType('403');
 
 				if(empty($row)){
-					GenericExceptionHandler::$enabled = true;
-					throw new SymphonyErrorPage(
+					Frontend::instance()->throwCustomError(
 						__('Please login to view this page.') . ' <a href="' . SYMPHONY_URL . '/login/">' . __('Take me to the login page') . '</a>.',
 						__('Forbidden'),
-						'generic',
-						array('header' => 'HTTP/1.0 403 Forbidden')
+						Page::HTTP_STATUS_FORBIDDEN
 					);
 				}
 
@@ -794,7 +791,7 @@
 			$dependencies = array();
 
 			foreach ($datasources as $handle) {
-				$pool[$handle] =& DatasourceManager::create($handle, array(), false);
+				$pool[$handle] = DatasourceManager::create($handle, array(), false);
 				$dependencies[$handle] = $pool[$handle]->getDependencies();
 			}
 
@@ -802,14 +799,21 @@
 
 			foreach ($dsOrder as $handle) {
 				Symphony::Profiler()->seed();
-
 				$queries = Symphony::Database()->queryCount();
 
-				$ds = $pool[$handle];
-				$ds->processParameters(array('env' => $this->_env, 'param' => $this->_param));
-
 				// default to no XML
-				$xml = NULL;
+				$xml = null;
+				$ds = $pool[$handle];
+
+				// Handle redirect on empty setting correctly RE: #1539
+				try {
+					$ds->processParameters(array('env' => $this->_env, 'param' => $this->_param));
+				}
+				catch(FrontendPageNotFoundException $e){
+					// Work around. This ensures the 404 page is displayed and
+					// is not picked up by the default catch() statement below
+					FrontendPageNotFoundExceptionHandler::render($e);
+				}
 
 				/**
 				 * Allows extensions to execute the data source themselves (e.g. for caching)
@@ -871,9 +875,7 @@
 				}
 
 				$queries = Symphony::Database()->queryCount() - $queries;
-
 				Symphony::Profiler()->sample($handle, PROFILE_LAP, 'Datasource', $queries);
-
 				unset($ds);
 			}
 		}
@@ -894,9 +896,9 @@
 
 			foreach($dependenciesList as $handle => $dependencies) {
 				foreach($dependencies as $i => $dependency) {
-					$dependenciesList[$handle][$i] = reset(explode('.',$dependency));
+					$dependency = explode('.',$dependency);
+					$dependenciesList[$handle][$i] = reset($dependency);
 				}
-
 			}
 
 			$orderedList = array();
@@ -905,7 +907,6 @@
 			// 1. First do a cleanup of each dependency list, removing non-existant DS's and find
 			//	  the ones that have no dependencies, removing them from the list
 			foreach($dependenciesList as $handle => $dependencies){
-
 				$dependenciesList[$handle] = @array_intersect($dsKeyArray, $dependencies);
 
 				if(empty($dependenciesList[$handle])){
@@ -919,7 +920,6 @@
 			//	  or there are circular dependencies (list doesn't change between iterations
 			//	  of the while loop)
 			do{
-
 				$last_count = count($dependenciesList);
 
 				foreach($dependenciesList as $handle => $dependencies){
@@ -928,10 +928,12 @@
 						unset($dependenciesList[$handle]);
 					}
 				}
+			}
+			while(!empty($dependenciesList) && $last_count > count($dependenciesList));
 
-			}while(!empty($dependenciesList) && $last_count > count($dependenciesList));
-
-			if(!empty($dependenciesList)) $orderedList = array_merge($orderedList, array_keys($dependenciesList));
+			if(!empty($dependenciesList)) {
+				$orderedList = array_merge($orderedList, array_keys($dependenciesList));
+			}
 
 			return array_map(create_function('$a', "return str_replace('-', '_', \$a);"), $orderedList);
 		}

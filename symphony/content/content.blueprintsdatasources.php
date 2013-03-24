@@ -34,6 +34,7 @@
 
 		public function __form(){
 			$formHasErrors = (is_array($this->_errors) && !empty($this->_errors));
+
 			if($formHasErrors) {
 				$this->pageAlert(
 					__('An error occurred while processing this form. See below for details.')
@@ -91,12 +92,16 @@
 				if(!isset($fields['xml_elements']) || !is_array($fields['xml_elements'])) {
 					$fields['xml_elements'] = array();
 				}
+
+				if($this->_context[0] == 'edit') {
+					$isEditing = true;
+				}
 			}
 
 			else if($this->_context[0] == 'edit'){
 				$isEditing = true;
 				$handle = $this->_context[1];
-				$existing =& DatasourceManager::create($handle, array(), false);
+				$existing = DatasourceManager::create($handle, array(), false);
 				$order = isset($existing->dsParamORDER) ? $existing->dsParamORDER : 'asc';
 
 				if (!$existing->allowEditorToParse()) redirect(SYMPHONY_URL . '/blueprints/datasources/info/' . $handle . '/');
@@ -164,12 +169,18 @@
 							break;
 
 						case 'static_xml':
-							$existing->grab();
-							if (!isset($existing->dsParamSTATIC))
-								$fields['static_xml'] = trim($existing->dsSTATIC);
-							else
+							// Symphony 2.3+
+							if (isset($existing->dsParamSTATIC)) {
 								$fields['static_xml'] = trim($existing->dsParamSTATIC);
-							break;
+							}
+							// Handle Symphony 2.2.2 to 2.3 DS's
+							else if(isset($existing->dsSTATIC)) {
+								$fields['static_xml'] = trim($existing->dsSTATIC);
+							}
+							// Handle pre Symphony 2.2.1 Static DS's
+							else {
+								$fields['static_xml'] = trim($existing->grab());
+							}
 							break;
 
 						default:
@@ -194,9 +205,17 @@
 				$fields['associated_entry_counts'] = NULL;
 			}
 
+			// Handle name on edited changes, or from reading an edited datasource
+			if(isset($about['name'])) {
+				$name = $about['name'];
+			}
+			else if(isset($fields['name'])) {
+				$name = $fields['name'];
+			}
+
 			$this->setPageType('form');
-			$this->setTitle(__(($isEditing ? '%1$s &ndash; %2$s &ndash; %3$s' : '%2$s &ndash; %3$s'), array($about['name'], __('Data Sources'), __('Symphony'))));
-			$this->appendSubheading(($isEditing ? $about['name'] : __('Untitled')));
+			$this->setTitle(__(($isEditing ? '%1$s &ndash; %2$s &ndash; %3$s' : '%2$s &ndash; %3$s'), array($name, __('Data Sources'), __('Symphony'))));
+			$this->appendSubheading(($isEditing ? $name : __('Untitled')));
 			$this->insertBreadcrumbs(array(
 				Widget::Anchor(__('Data Sources'), SYMPHONY_URL . '/blueprints/datasources/'),
 			));
@@ -608,7 +627,7 @@
 			$fieldset->appendChild($p);
 
 			$label = Widget::Label();
-			$input = Widget::Input('fields[redirect_on_empty]', 'yes', 'checkbox', (isset($fields['redirect_on_empty']) ? array('checked' => 'checked') : NULL));
+			$input = Widget::Input('fields[redirect_on_empty]', 'yes', 'checkbox', (isset($fields['redirect_on_empty']) && $fields['redirect_on_empty'] == 'yes') ? array('checked' => 'checked') : NULL);
 			$label->setValue(__('%s Redirect to 404 page when no results are found', array($input->generate(false))));
 			$fieldset->appendChild($label);
 
@@ -636,7 +655,12 @@
 				$options[0]['options'][] = array(
 					$p,
 					($fields['source'] == 'authors' && in_array($p, $fields['param'])),
-					$prefix . $p
+					$prefix . $p,
+					null,
+					null,
+					array(
+						'data-handle' => $p
+					)
 				);
 			}
 
@@ -647,7 +671,12 @@
 					$option = array(
 						'system:' . $p,
 						($fields['source'] == $section_id && in_array('system:' . $p, $fields['param'])),
-						$prefix . 'system-' . $p
+						$prefix . 'system-' . $p,
+						null,
+						null,
+						array(
+							'data-handle' => 'system-' . $p
+						)
 					);
 
 					// Handle 'system:date' as an output paramater (backwards compatibility)
@@ -670,7 +699,12 @@
 						$optgroup['options'][] = array(
 							$input->get('element_name'),
 							($fields['source'] == $section_id && in_array($input->get('element_name'), $fields['param'])),
-							$prefix . $input->get('element_name')
+							$prefix . $input->get('element_name'),
+							null,
+							null,
+							array(
+								'data-handle' => $input->get('element_name')
+							)
 						);
 					}
 				}
@@ -786,8 +820,9 @@
 			$this->Form->appendChild($fieldset);
 
 		// Dynamic XML
-
-			$fields['dynamic_xml'] = array('url'=>null, 'xpath'=>null, 'namespace'=>null, 'cache'=>null, 'timeout'=>null);
+			if(!isset($fields['dynamic_xml'])) {
+				$fields['dynamic_xml'] = array('url'=>null, 'xpath'=>null, 'namespace'=>null, 'cache'=>null, 'timeout'=>null);
+			}
 
 			$fieldset = new XMLElement('fieldset');
 			$fieldset->setAttribute('class', 'settings contextual dynamic_xml');
@@ -893,8 +928,9 @@
 			$this->Form->appendChild($fieldset);
 
 		// Static XML
-
-			$fields['static_xml'] = null;
+			if(!isset($fields['static_xml'])) {
+				$fields['static_xml'] = null;
+			}
 
 			$fieldset = new XMLElement('fieldset');
 			$fieldset->setAttribute('class', 'settings contextual static_xml');
@@ -944,7 +980,10 @@
 			$about = $datasource->about();
 
 			$this->setTitle(__('%1$s &ndash; %2$s &ndash; %3$s', array($about['name'], __('Data Source'), __('Symphony'))));
-			$this->appendSubheading($about['name']);
+			$this->appendSubheading(($isEditing ? $about['name'] : __('Untitled')));
+			$this->insertBreadcrumbs(array(
+				Widget::Anchor(__('Data Sources'), SYMPHONY_URL . '/blueprints/datasources/'),
+			));
 			$this->Form->setAttribute('id', 'controller');
 
 			$link = $about['author']['name'];
@@ -971,8 +1010,14 @@
 					case 'version':
 						$fieldset = new XMLElement('fieldset');
 						$fieldset->appendChild(new XMLElement('legend', __('Version')));
-						if(preg_match('/^\d+(\.\d+)*$/', $value)) $fieldset->appendChild(new XMLElement('p', __('%1$s released on %2$s', array($value, DateTimeObj::format($about['release-date'], __SYM_DATE_FORMAT__)))));
-						else $fieldset->appendChild(new XMLElement('p', __('Created by %1$s at %2$s', array($value, DateTimeObj::format($about['release-date'], __SYM_DATE_FORMAT__)))));
+						$release_date = array_key_exists('release-date', $about) ? $about['release-date'] : filemtime(DatasourceManager::__getDriverPath($this->_context[1]));
+
+						if(preg_match('/^\d+(\.\d+)*$/', $value)) {
+							$fieldset->appendChild(new XMLElement('p', __('%1$s released on %2$s', array($value, DateTimeObj::format($release_date, __SYM_DATE_FORMAT__)))));
+						}
+						else {
+							$fieldset->appendChild(new XMLElement('p', __('Created by %1$s at %2$s', array($value, DateTimeObj::format($release_date, __SYM_DATE_FORMAT__)))));
+						}
 						break;
 
 					case 'description':
@@ -1225,6 +1270,7 @@
 
 						case 'dynamic_xml':
 							$extends = 'DynamicXMLDatasource';
+
 							// Automatically detect namespaces
 							if(isset($data)) {
 								preg_match_all('/xmlns:([a-z][a-z-0-9\-]*)="([^\"]+)"/i', $data, $matches);
@@ -1281,7 +1327,7 @@
 
 							$params['static'] = sprintf(
 								'%s',
-								addslashes(trim($fields['static_xml']))
+								trim($fields['static_xml'])
 							);
 							break;
 

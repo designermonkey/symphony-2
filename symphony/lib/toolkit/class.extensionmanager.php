@@ -394,7 +394,9 @@
 				$obj->uninstall();
 			}
 			catch(SymphonyErrorPage $ex) {
-				if($ex->getHeading() !== 'Symphony Extension Missing Error') {
+				// Create a consistant key
+				$key = str_replace('-', '_', $ex->getTemplateName());
+				if($key !== 'missing_extension') {
 					throw $ex;
 				}
 			}
@@ -780,11 +782,13 @@
 					}
 				}
 				catch (Exception $ex) {
-					throw new SymphonyErrorPage(__('The %1$s file for the %2$s extension is not valid XML: %3$s', array(
-						'<code>extension.meta.xml</code>',
-						'<code>' . $name . '</code>',
-						'<br /><code>' . $ex->getMessage() . '</code>'
-					)));
+					Symphony::Engine()->throwCustomError(
+						__('The %1$s file for the %2$s extension is not valid XML: %3$s', array(
+							'<code>extension.meta.xml</code>',
+							'<code>' . $name . '</code>',
+							'<br /><code>' . $ex->getMessage() . '</code>'
+						))
+					);
 				}
 
 				// Load <extension>
@@ -825,6 +829,12 @@
 					$required_min_version = $xpath->evaluate('string(@min)', $release);
 					$required_max_version = $xpath->evaluate('string(@max)', $release);
 					$current_symphony_version = Symphony::Configuration()->get('version', 'symphony');
+
+					// Munge the version number so that it makes sense in the backend.
+					// Consider, 2.3.x. As the min version, this means 2.3 onwards,
+					// for the max it implies any 2.3 release. RE: #1019
+					$required_min_version = str_replace('.x', '', $required_min_version);
+					$required_max_version = str_replace('.x', 'p', $required_max_version);
 
 					// Min version
 					if(!empty($required_min_version) &&
@@ -888,13 +898,15 @@
 				$path = self::__getDriverPath($name);
 
 				if(!is_file($path)) {
-					throw new SymphonyErrorPage(
+					Symphony::Engine()->throwCustomError(
 						__('Could not find extension %s at location %s.', array(
 							'<code>' . $name . '</code>',
 							'<code>' . $path . '</code>'
 						)),
-						'Symphony Extension Missing Error',
-						'missing_extension', array(
+						__('Symphony Extension Missing Error'),
+						Page::HTTP_STATUS_ERROR,
+						'missing_extension',
+						array(
 							'name' => $name,
 							'path' => $path
 						)
