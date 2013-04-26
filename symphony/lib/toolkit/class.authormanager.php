@@ -3,12 +3,14 @@
 	 * @package toolkit
 	 */
 	/**
-	 * The AuthorManager class is responsible for managing all Author objects
+	 * The `AuthorManager` class is responsible for managing all Author objects
 	 * in Symphony. Unlike other Manager objects, Authors are stored in the
-	 * database, and not on the file system. CRUD methods are implemented to
-	 * allow Authors to be created (add), read (fetch), updated (edit) and
-	 * deleted (delete).
+	 * database in `tbl_authors` and not on the file system. CRUD methods are
+	 * implemented to allow Authors to be created (add), read (fetch), updated
+	 * (edit) and deleted (delete).
 	 */
+
+	require_once(TOOLKIT . '/class.author.php');
 
 	Class AuthorManager {
 
@@ -21,7 +23,7 @@
 
 		/**
 		 * Given an associative array of fields, insert them into the database
-		 * returning the resulting AuthorID if successful, or false if there
+		 * returning the resulting Author ID if successful, or false if there
 		 * was an error
 		 *
 		 * @param array $fields
@@ -81,13 +83,15 @@
 		 * @param integer $start
 		 *  The offset start point for limiting, maps to the LIMIT {x}, {y} MySQL functionality
 		 * @param string $where
-		 *  Any custom WHERE clauses. The tbl_authors alias is `a`
+		 *  Any custom WHERE clauses. The `tbl_authors` alias is `a`
 		 * @param string $joins
 		 *  Any custom JOIN's
 		 * @return array
-		 *  An array of Author objects. If no Authors are found, null is returned.
+		 *  An array of Author objects. If no Authors are found, an empty array is returned.
 		 */
 		public static function fetch($sortby = 'id', $sortdirection = 'ASC', $limit = null, $start = null, $where = null, $joins = null) {
+			$sortby = is_null($sortby) ? 'id' : Symphony::Database()->cleanValue($sortby);
+			$sortdirection = $sortdirection === 'ASC' ? 'ASC' : 'DESC';
 
 			$records = Symphony::Database()->fetch(sprintf("
 					SELECT a.*
@@ -99,7 +103,7 @@
 				",
 				$joins,
 				($where) ? $where : 1,
-				'a.'.$sortby, $sortdirection,
+				'a.'. $sortby, $sortdirection,
 				($limit) ? "LIMIT " . $limit : '',
 				($start && $limit) ? ', ' . $start : ''
 			));
@@ -157,6 +161,7 @@
 
 			// Get all the Author ID's that are not already stored in `self::$_pool`
 			$id = array_diff($id, array_keys(self::$_pool));
+			$id = array_filter($id);
 
 			if(empty($id)) return ($return_single ? $authors[0] : $authors);
 
@@ -193,7 +198,6 @@
 		 *  If an Author is found, an Author object is returned, otherwise null.
 		 */
 		public static function fetchByUsername($username) {
-
 			if(!isset(self::$_pool[$username])) {
 				$records = Symphony::Database()->fetchRow(0, sprintf("
 						SELECT *

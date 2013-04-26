@@ -218,10 +218,16 @@
 	define_safe('HTTP_USER_AGENT', getenv('HTTP_USER_AGENT'));
 
 	/**
-	 * If HTTPS is on, `__SECURE__` will be set to true, otherwise false
+	 * If HTTPS is on, `__SECURE__` will be set to true, otherwise false. Use union of
+	 * the `HTTPS` environmental variable and the X-Forwarded-Proto header to allow
+	 * downstream proxies to inform the webserver of secured downstream connections
 	 * @var string|boolean
 	 */
-	define_safe('__SECURE__', (HTTPS == 'on'));
+	define_safe('__SECURE__',
+		(HTTPS == 'on' ||
+			isset($_SERVER['HTTP_X_FORWARDED_PROTO']) &&
+			$_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https')
+	);
 
 	/**
 	 * The base URL of this Symphony install, minus the symphony path.
@@ -236,3 +242,10 @@
 	 * @var string
 	 */
 	define_safe('SYMPHONY_URL', URL . '/symphony');
+
+	/**
+	 * Returns the folder name for Symphony as an application
+	 * @since Symphony 2.3.2
+	 * @var string
+	 */
+	define_safe('APPLICATION_URL', URL . '/symphony');

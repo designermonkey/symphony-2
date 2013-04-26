@@ -4,13 +4,14 @@
 	 * @package toolkit
 	 */
 
+	require_once FACE . '/interface.exportablefield.php';
+	require_once FACE . '/interface.importablefield.php';
+
 	/**
 	 * A simple Select field that essentially maps to HTML's `<select/>`. The
 	 * options for this field can be static, or feed from another field.
 	 */
-
-	Class fieldSelect extends Field {
-
+	class FieldSelect extends Field implements ExportableField, ImportableField {
 		public function __construct(){
 			parent::__construct();
 			$this->_name = __('Select Box');
@@ -37,12 +38,7 @@
 			if ($this->get('dynamic_options') != '') $this->findAndAddDynamicOptions($values);
 
 			$values = array_map('trim', $values);
-			$states = array();
-
-			foreach ($values as $value) {
-				$value = $value;
-				$states[$value] = $value;
-			}
+			$states = array_combine($values, $values);
 
 			if($this->get('sort_options') == 'yes') {
 				natsort($states);
@@ -61,10 +57,6 @@
 			return true;
 		}
 
-		public function canImport(){
-			return true;
-		}
-
 		public function canPrePopulate(){
 			return true;
 		}
@@ -80,6 +72,11 @@
 
 		public function allowDatasourceParamOutput(){
 			return true;
+		}
+
+		public function requiresSQLGrouping(){
+			// SQL grouping follows the opposite rule as toggling.
+			return !$this->canToggle();
 		}
 
 	/*-------------------------------------------------------------------------
@@ -113,7 +110,7 @@
 			return Symphony::Database()->fetchCol('entry_id', "SELECT `entry_id` FROM `tbl_entries_data_".$this->get('id')."` WHERE `value` = '".Symphony::Database()->cleanValue($value)."'");
 		}
 
-		public function fetchAssociatedEntrySearchValue($data){
+		public function fetchAssociatedEntrySearchValue($data, $field_id = null, $parent_entry_id = null){
 			if(!is_array($data)) return $data;
 
 			return $data['value'];
@@ -225,7 +222,7 @@
 			$label->setValue(__('%s Allow selection of multiple options', array($input->generate())));
 			$div->appendChild($label);
 
-			$this->appendShowAssociationCheckbox($div, __('Available when using Dynamic Values'));
+			$this->appendShowAssociationCheckbox($div, __('available when using Dynamic Values'));
 
 			// Sort options?
 			$label = Widget::Label();
@@ -286,15 +283,16 @@
 
 		public function displayPublishPanel(XMLElement &$wrapper, $data = null, $flagWithError = null, $fieldnamePrefix = null, $fieldnamePostfix = null, $entry_id = null){
 			$states = $this->getToggleStates();
+			$value = isset($data['value']) ? $data['value'] : null;
 
-			if(!is_array($data['value'])) $data['value'] = array($data['value']);
+			if(!is_array($value)) $value = array($value);
 
 			$options = array(
-				array(NULL, false, NULL)
+				array(null, false, null)
 			);
 
 			foreach($states as $handle => $v){
-				$options[] = array(General::sanitize($v), in_array($v, $data['value']), General::sanitize($v));
+				$options[] = array(General::sanitize($v), in_array($v, $value), General::sanitize($v));
 			}
 
 			$fieldname = 'fields'.$fieldnamePrefix.'['.$this->get('element_name').']'.$fieldnamePostfix;
@@ -302,20 +300,28 @@
 
 			$label = Widget::Label($this->get('label'));
 			if($this->get('required') != 'yes') $label->appendChild(new XMLElement('i', __('Optional')));
-			$label->appendChild(Widget::Select($fieldname, $options, ($this->get('allow_multiple_selection') == 'yes' ? array('multiple' => 'multiple') : NULL)));
+			$label->appendChild(Widget::Select($fieldname, $options, ($this->get('allow_multiple_selection') == 'yes' ? array('multiple' => 'multiple', 'size' => count($options)) : NULL)));
 
-			if($flagWithError != NULL) $wrapper->appendChild(Widget::Error($label, $flagWithError));
+			if($flagWithError != null) $wrapper->appendChild(Widget::Error($label, $flagWithError));
 			else $wrapper->appendChild($label);
 		}
 
 		public function processRawFieldData($data, &$status, &$message=null, $simulate=false, $entry_id=NULL){
 			$status = self::__OK__;
 
-			if(!is_array($data)) return array('value' => $data, 'handle' => Lang::createHandle($data));
+			if(!is_array($data)) {
+				return array(
+					'value' => $data,
+					'handle' => Lang::createHandle($data)
+				);
+			}
 
-			if(empty($data)) return NULL;
+			if(empty($data)) return null;
 
-			$result = array('value' => array(), 'handle' => array());
+			$result = array(
+				'value' => array(),
+				'handle' => array()
+			);
 
 			foreach($data as $value){
 				$result['value'][] = $value;
@@ -355,15 +361,114 @@
 		}
 
 		public function prepareTableValue($data, XMLElement $link=NULL, $entry_id = null){
-			$value = $data['value'];
-
-			if(!is_array($value)) $value = array($value);
+			$value = $this->prepareExportValue($data, ExportableField::LIST_OF + ExportableField::VALUE, $entry_id);
 
 			return parent::prepareTableValue(array('value' => implode(', ', $value)), $link, $entry_id = null);
 		}
 
-		public function getParameterPoolValue($data, $entry_id = null) {
-			return $data['handle'];
+		public function getParameterPoolValue(array $data, $entry_id = null) {
+			return $this->prepareExportValue($data, ExportableField::LIST_OF + ExportableField::HANDLE, $entry_id);
+		}
+
+	/*-------------------------------------------------------------------------
+		Import:
+	-------------------------------------------------------------------------*/
+
+		public function getImportModes() {
+			return array(
+				'getValue' =>		ImportableField::STRING_VALUE,
+				'getPostdata' =>	ImportableField::ARRAY_VALUE
+			);
+		}
+
+		public function prepareImportValue($data, $mode, $entry_id = null) {
+			$message = $status = null;
+			$modes = (object)$this->getImportModes();
+
+			if(!is_array($data)) {
+				$data = array($data);
+			}
+
+			if($mode === $modes->getValue) {
+				if ($this->get('allow_multiple_selection') === 'no') {
+					$data = array(implode('', $data));
+				}
+
+				return $data;
+			}
+			else if($mode === $modes->getPostdata) {
+				return $this->processRawFieldData($data, $status, $message, true, $entry_id);
+			}
+
+			return null;
+		}
+
+	/*-------------------------------------------------------------------------
+		Export:
+	-------------------------------------------------------------------------*/
+
+		/**
+		 * Return a list of supported export modes for use with `prepareExportValue`.
+		 *
+		 * @return array
+		 */
+		public function getExportModes() {
+			return array(
+				'listHandle' =>			ExportableField::LIST_OF
+										+ ExportableField::HANDLE,
+				'listValue' =>			ExportableField::LIST_OF
+										+ ExportableField::VALUE,
+				'listHandleToValue' =>	ExportableField::LIST_OF
+										+ ExportableField::HANDLE
+										+ ExportableField::VALUE,
+				'getPostdata' =>		ExportableField::POSTDATA
+			);
+		}
+
+		/**
+		 * Give the field some data and ask it to return a value using one of many
+		 * possible modes.
+		 *
+		 * @param mixed $data
+		 * @param integer $mode
+		 * @param integer $entry_id
+		 * @return array
+		 */
+		public function prepareExportValue($data, $mode, $entry_id = null) {
+			$modes = (object)$this->getExportModes();
+
+			if (isset($data['handle']) && is_array($data['handle']) === false) {
+				$data['handle'] = array(
+					$data['handle']
+				);
+			}
+
+			if (isset($data['value']) && is_array($data['value']) === false) {
+				$data['value'] = array(
+					$data['value']
+				);
+			}
+
+			// Handle => Value pairs:
+			if ($mode === $modes->listHandleToValue) {
+				return isset($data['handle'], $data['value'])
+					? array_combine($data['handle'], $data['value'])
+					: array();
+			}
+
+			// Array of handles:
+			else if ($mode === $modes->listHandle) {
+				return isset($data['handle'])
+					? $data['handle']
+					: array();
+			}
+
+			// Array of values:
+			else if ($mode === $modes->listValue || $mode === $modes->getPostdata) {
+				return isset($data['value'])
+					? $data['value']
+					: array();
+			}
 		}
 
 	/*-------------------------------------------------------------------------

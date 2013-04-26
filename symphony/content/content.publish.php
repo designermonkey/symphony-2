@@ -82,14 +82,17 @@
 
 		public function __viewIndex(){
 			if(!$section_id = SectionManager::fetchIDFromHandle($this->_context['section_handle'])) {
-				Administration::instance()->customError(__('Unknown Section'), __('The Section you are looking for, %s, could not be found.', array('<code>' . $this->_context['section_handle'] . '</code>')));
+				Administration::instance()->throwCustomError(
+					__('The Section, %s, could not be found.', array('<code>' . $this->_context['section_handle'] . '</code>')),
+					__('Unknown Section'),
+					Page::HTTP_STATUS_NOT_FOUND
+				);
 			}
 
 			$section = SectionManager::fetch($section_id);
 
 			$this->setPageType('table');
 			$this->setTitle(__('%1$s &ndash; %2$s', array($section->get('name'), __('Symphony'))));
-			$this->Form->setAttribute("class", $this->_context['section_handle']);
 
 			$filters = array();
 			$filter_querystring = $prepopulate_querystring = $where = $joins = NULL;
@@ -138,12 +141,12 @@
 			$this->Form->setAttribute('action', Administration::instance()->getCurrentPageURL(). '?pg=' . $current_page.($filter_querystring ? "&amp;" . $filter_querystring : ''));
 
 			$subheading_buttons = array(
-				Widget::Anchor(__('Create New'), Administration::instance()->getCurrentPageURL().'new/'.($filter_querystring ? '?' . $prepopulate_querystring : ''), __('Create a new entry'), 'create button', NULL, array('accesskey' => 'c'))
+				Widget::Anchor(__('Create New'), Administration::instance()->getCurrentPageURL().'new/'.($prepopulate_querystring ? '?' . $prepopulate_querystring : ''), __('Create a new entry'), 'create button', NULL, array('accesskey' => 'c'))
 			);
 
 			// Only show the Edit Section button if the Author is a developer. #938 ^BA
 			if(Administration::instance()->Author->isDeveloper()) {
-				array_unshift($subheading_buttons, Widget::Anchor(__('Edit Section'), SYMPHONY_URL . '/blueprints/sections/edit/' . $section_id, __('Edit Section Configuration'), 'button'));
+				array_unshift($subheading_buttons, Widget::Anchor(__('Edit Section'), SYMPHONY_URL . '/blueprints/sections/edit/' . $section_id . '/', __('Edit Section Configuration'), 'button'));
 			}
 
 			$this->appendSubheading($section->get('name'), $subheading_buttons);
@@ -208,8 +211,8 @@
 			}
 
 			/**
-			 * Allows the creation of custom entries tablecolumns. Called
-			 * after all the Section Visible columns have been added  as well
+			 * Allows the creation of custom table columns for each entry. Called
+			 * after all the Section Visible columns have been added as well
 			 * as the Section Associations
 			 *
 			 * @delegate AddCustomPublishColumn
@@ -240,7 +243,8 @@
 						$field_pool[$column->get('id')] = $column;
 					}
 				}
-				$link_column = end(array_reverse($visible_columns));
+				$link_column = array_reverse($visible_columns);
+				$link_column = end($link_column);
 				reset($visible_columns);
 
 				foreach($entries['records'] as $entry) {
@@ -253,7 +257,7 @@
 					else {
 						$link = Widget::Anchor(
 							__('None'),
-							Administration::instance()->getCurrentPageURL() . 'edit/' . $entry->get('id') . '/',
+							Administration::instance()->getCurrentPageURL() . 'edit/' . $entry->get('id') . '/'.($filter_querystring ? '?' . $prepopulate_querystring : ''),
 							$entry->get('id'),
 							'content'
 						);
@@ -326,13 +330,22 @@
 					 * @param string $context
 					 * '/publish/'
 					 * @param array $tableData
-					 *	An array of `Widget::TableData`, passed by reference
+					 *  An array of `Widget::TableData`, passed by reference
 					 * @param integer $section_id
-					 *	The current Section ID
-					 * @param integer $entry_id
-					 *	The Entry ID for this row
+					 *  The current Section ID
+					 * @param Entry $entry_id
+					 *  The entry object, please note that this is by error and this will
+					 *  be removed in Symphony 2.4. The entry object is available in
+					 *  the 'entry' key as of Symphony 2.3.1.
+					 * @param Entry $entry
+					 *  The entry object for this row
 					 */
-					Symphony::ExtensionManager()->notifyMembers('AddCustomPublishColumnData', '/publish/', array('tableData' => &$tableData, 'section_id' => $section->get('id'), 'entry_id' => $entry));
+					Symphony::ExtensionManager()->notifyMembers('AddCustomPublishColumnData', '/publish/', array(
+						'tableData' => &$tableData,
+						'section_id' => $section->get('id'),
+						'entry_id' => $entry,
+						'entry' => $entry
+					));
 
 					$tableData[count($tableData) - 1]->appendChild(Widget::Input('items['.$entry->get('id').']', NULL, 'checkbox'));
 
@@ -376,8 +389,28 @@
 				}
 			}
 
-			$tableActions->appendChild(Widget::Apply($options));
-			$this->Form->appendChild($tableActions);
+			/**
+			 * Allows an extension to modify the existing options for this page's
+			 * With Selected menu. If the `$options` parameter is an empty array,
+			 * the 'With Selected' menu will not be rendered.
+			 *
+			 * @delegate AddCustomActions
+			 * @since Symphony 2.3.2
+			 * @param string $context
+			 * '/publish/'
+			 * @param array $options
+			 *  An array of arrays, where each child array represents an option
+			 *  in the With Selected menu. Options should follow the same format
+			 *  expected by `Widget::__SelectBuildOption`. Passed by reference.
+			 */
+			Symphony::ExtensionManager()->notifyMembers('AddCustomActions', '/publish/', array(
+				'options' => &$options
+			));
+
+			if(!empty($options)) {
+				$tableActions->appendChild(Widget::Apply($options));
+				$this->Form->appendChild($tableActions);
+			}
 
 			if($entries['total-pages'] > 1){
 				$ul = new XMLElement('ul');
@@ -431,14 +464,30 @@
 			}
 		}
 
-		public function __actionIndex(){
+		public function __actionIndex() {
 			$checked = (is_array($_POST['items'])) ? array_keys($_POST['items']) : null;
 
 			if(is_array($checked) && !empty($checked)){
+				/**
+				 * Extensions can listen for any custom actions that were added
+				 * through `AddCustomPreferenceFieldsets` or `AddCustomActions`
+				 * delegates.
+				 *
+				 * @delegate CustomActions
+				 * @since Symphony 2.3.2
+				 * @param string $context
+				 *  '/publish/'
+				 * @param array $checked
+				 *  An array of the selected rows. The value is usually the ID of the
+				 *  the associated object.
+				 */
+				Symphony::ExtensionManager()->notifyMembers('CustomActions', '/publish/', array(
+					'checked' => $checked
+				));
+
 				switch($_POST['with-selected']) {
 
 					case 'delete':
-
 						/**
 						 * Prior to deletion of entries. An array of Entry ID's is provided which
 						 * can be manipulated. This delegate was renamed from `Delete` to `EntryPreDelete`
@@ -482,6 +531,8 @@
 
 							foreach($checked as $entry_id){
 								$entry = EntryManager::fetch($entry_id);
+								$existing_data = $entry[0]->getData($field_id);
+								$entry[0]->setData($field_id, $field->toggleFieldData(is_array($existing_data) ? $existing_data : array(), $value, $entry_id));
 
 								/**
 								 * Just prior to editing of an Entry
@@ -499,8 +550,6 @@
 									'fields' => $fields
 								));
 
-								$existing_data = $entry[0]->getData($field_id);
-								$entry[0]->setData($field_id, $field->toggleFieldData(is_array($existing_data) ? $existing_data : array(), $value, $entry_id));
 								$entry[0]->commit();
 
 								/**
@@ -531,7 +580,11 @@
 
 		public function __viewNew() {
 			if(!$section_id = SectionManager::fetchIDFromHandle($this->_context['section_handle'])) {
-				Administration::instance()->customError(__('Unknown Section'), __('The Section you are looking for, %s, could not be found.', array('<code>' . $this->_context['section_handle'] . '</code>')));
+				Administration::instance()->throwCustomError(
+					__('The Section, %s, could not be found.', array('<code>' . $this->_context['section_handle'] . '</code>')),
+					__('Unknown Section'),
+					Page::HTTP_STATUS_NOT_FOUND
+				);
 			}
 
 			$section = SectionManager::fetch($section_id);
@@ -544,15 +597,28 @@
 			// Only show the Edit Section button if the Author is a developer. #938 ^BA
 			if(Administration::instance()->Author->isDeveloper()) {
 				$this->appendSubheading(__('Untitled'),
-					Widget::Anchor(__('Edit Section'), SYMPHONY_URL . '/blueprints/sections/edit/' . $section_id, __('Edit Section Configuration'), 'button')
+					Widget::Anchor(__('Edit Section'), SYMPHONY_URL . '/blueprints/sections/edit/' . $section_id . '/', __('Edit Section Configuration'), 'button')
 				);
 			}
 			else {
 				$this->appendSubheading(__('Untitled'));
 			}
 
+			// Build filtered breadcrumb [#1378}
+			if(isset($_REQUEST['prepopulate'])){
+				$link = '?';
+				foreach($_REQUEST['prepopulate'] as $field_id => $value) {
+					$handle = FieldManager::fetchHandleFromID($field_id);
+					$link .= "filter[$handle]=$value&amp;";
+				}
+				$link = preg_replace("/&amp;$/", '', $link);
+			}
+			else {
+				$link = '';
+			}
+
 			$this->insertBreadcrumbs(array(
-				Widget::Anchor($section->get('name'), SYMPHONY_URL . '/publish/' . $this->_context['section_handle']),
+				Widget::Anchor($section->get('name'), SYMPHONY_URL . '/publish/' . $this->_context['section_handle'] . '/' . $link),
 			));
 
 			$this->Form->appendChild(Widget::Input('MAX_FILE_SIZE', Symphony::Configuration()->get('max_upload_size', 'admin'), 'hidden'));
@@ -636,20 +702,22 @@
 		}
 
 		public function __actionNew(){
-
 			if(array_key_exists('save', $_POST['action']) || array_key_exists("done", $_POST['action'])) {
-
 				$section_id = SectionManager::fetchIDFromHandle($this->_context['section_handle']);
 
 				if(!$section = SectionManager::fetch($section_id)) {
-					Administration::instance()->customError(__('Unknown Section'), __('The Section you are looking for, %s, could not be found.', array('<code>' . $this->_context['section_handle'] . '</code>')));
+					Administration::instance()->throwCustomError(
+						__('The Section, %s, could not be found.', array('<code>' . $this->_context['section_handle'] . '</code>')),
+						__('Unknown Section'),
+						Page::HTTP_STATUS_NOT_FOUND
+					);
 				}
 
-				$entry =& EntryManager::create();
-				$entry->set('section_id', $section_id);
+				$entry = EntryManager::create();
 				$entry->set('author_id', Administration::instance()->Author->get('id'));
-				$entry->set('creation_date', DateTimeObj::get('Y-m-d H:i:s'));
-				$entry->set('creation_date_gmt', DateTimeObj::getGMT('Y-m-d H:i:s'));
+				$entry->set('section_id', $section_id);
+				$entry->set('creation_date', DateTimeObj::get('c'));
+				$entry->set('modification_date', DateTimeObj::get('c'));
 
 				$fields = $_POST['fields'];
 
@@ -659,11 +727,11 @@
 
 					foreach($filedata as $handle => $data){
 						if(!isset($fields[$handle])) $fields[$handle] = $data;
-						elseif(isset($data['error']) && $data['error'] == 4) $fields['handle'] = NULL;
+						elseif(isset($data['error']) && $data['error'] == UPLOAD_ERR_NO_FILE) $fields[$handle] = NULL;
 						else{
 
 							foreach($data as $ii => $d){
-								if(isset($d['error']) && $d['error'] == 4) $fields[$handle][$ii] = NULL;
+								if(isset($d['error']) && $d['error'] == UPLOAD_ERR_NO_FILE) $fields[$handle][$ii] = NULL;
 								elseif(is_array($d) && !empty($d)){
 
 									foreach($d as $key => $val)
@@ -741,16 +809,27 @@
 
 		public function __viewEdit() {
 			if(!$section_id = SectionManager::fetchIDFromHandle($this->_context['section_handle'])) {
-				Administration::instance()->customError(__('Unknown Section'), __('The Section you are looking for, %s, could not be found.', array('<code>' . $this->_context['section_handle'] . '</code>')));
+				Administration::instance()->throwCustomError(
+					__('The Section, %s, could not be found.', array('<code>' . $this->_context['section_handle'] . '</code>')),
+					__('Unknown Section'),
+					Page::HTTP_STATUS_NOT_FOUND
+				);
 			}
 
 			$section = SectionManager::fetch($section_id);
 			$entry_id = intval($this->_context['entry_id']);
+			$base = '/publish/'.$this->_context['section_handle'] . '/';
+			$new_link = $base . 'new/';
+			$filter_link = $base;
 
 			EntryManager::setFetchSorting('id', 'DESC');
 
 			if(!$existingEntry = EntryManager::fetch($entry_id)) {
-				Administration::instance()->customError(__('Unknown Entry'), __('The entry you are looking for could not be found.'));
+				Administration::instance()->throwCustomError(
+					__('Unknown Entry'),
+					__('The Entry, %s, could not be found.', array($entry_id)),
+					Page::HTTP_STATUS_NOT_FOUND
+				);
 			}
 			$existingEntry = $existingEntry[0];
 
@@ -758,15 +837,19 @@
 			if (isset($_POST['fields'])) {
 				$fields = $_POST['fields'];
 
-				$entry =& EntryManager::create();
-				$entry->set('section_id', $existingEntry->get('section_id'));
+				$entry = EntryManager::create();
 				$entry->set('id', $entry_id);
+				$entry->set('author_id', $existingEntry->get('author_id'));
+				$entry->set('section_id', $existingEntry->get('section_id'));
+				$entry->set('creation_date', $existingEntry->get('creation_date'));
+				$entry->set('modification_date', $existingEntry->get('modification_date'));
 				$entry->setDataFromPost($fields, $errors, true);
 			}
 
 			// Editing an entry, so need to create some various objects
 			else {
 				$entry = $existingEntry;
+				$fields = array();
 
 				if (!$section) {
 					$section = SectionManager::fetch($entry->get('section_id'));
@@ -783,31 +866,38 @@
 			 * @param Entry $entry
 			 * @param array $fields
 			 */
-			Symphony::ExtensionManager()->notifyMembers('EntryPreRender', '/publish/edit/', array('section' => $section, 'entry' => &$entry, 'fields' => $fields));
+			Symphony::ExtensionManager()->notifyMembers('EntryPreRender', '/publish/edit/', array(
+				'section' => $section,
+				'entry' => &$entry,
+				'fields' => $fields
+			));
 
-			if(isset($this->_context['flag'])){
-
-				$link = 'publish/'.$this->_context['section_handle'].'/new/';
-
-				list($flag, $field_id, $value) = preg_split('/:/i', $this->_context['flag'], 3);
-
-				if(isset($_REQUEST['prepopulate'])){
-					$link .= '?';
-					foreach($_REQUEST['prepopulate'] as $field_id => $value) {
-						$link .= "prepopulate[$field_id]=$value&amp;";
-					}
-					$link = preg_replace("/&amp;$/", '', $link);
+			// Iterate over the `prepopulate` parameters to build a URL
+			// to remember this state for Create New, View all Entries and
+			// Breadcrumb links. If `prepopulate` doesn't exist, this will
+			// just use the standard pages (ie. no filtering)
+			if(isset($_REQUEST['prepopulate'])){
+				$new_link .= '?';
+				$filter_link .= '?';
+				foreach($_REQUEST['prepopulate'] as $field_id => $value) {
+					$new_link .= "prepopulate[$field_id]=$value&amp;";
+					$field_name = FieldManager::fetchHandleFromID($field_id);
+					$filter_link .= "filter[$field_name]=$value&amp;";
 				}
+				$new_link = preg_replace("/&amp;$/", '', $new_link);
+				$filter_link = preg_replace("/&amp;$/", '', $filter_link);
+			}
 
+			if(isset($this->_context['flag'])) {
 				// These flags are only relevant if there are no errors
 				if(empty($this->_errors)) {
-					switch($flag){
+					switch($this->_context['flag']) {
 						case 'saved':
 							$this->pageAlert(
 								__('Entry updated at %s.', array(DateTimeObj::getTimeAgo()))
-								. ' <a href="' . SYMPHONY_URL . '/' . $link . '" accesskey="c">'
+								. ' <a href="' . SYMPHONY_URL . $new_link . '" accesskey="c">'
 								. __('Create another?')
-								. '</a> <a href="' . SYMPHONY_URL . '/publish/'.$this->_context['section_handle'].'/" accesskey="a">'
+								. '</a> <a href="' . SYMPHONY_URL . $filter_link . '" accesskey="a">'
 								. __('View all Entries')
 								. '</a>'
 								, Alert::SUCCESS);
@@ -816,9 +906,9 @@
 						case 'created':
 							$this->pageAlert(
 								__('Entry created at %s.', array(DateTimeObj::getTimeAgo()))
-								. ' <a href="' . SYMPHONY_URL . '/' . $link . '" accesskey="c">'
+								. ' <a href="' . SYMPHONY_URL . $new_link . '" accesskey="c">'
 								. __('Create another?')
-								. '</a> <a href="' . SYMPHONY_URL . '/publish/'.$this->_context['section_handle'].'/" accesskey="a">'
+								. '</a> <a href="' . SYMPHONY_URL . $filter_link . '" accesskey="a">'
 								. __('View all Entries')
 								. '</a>'
 								, Alert::SUCCESS);
@@ -856,7 +946,7 @@
 			// Only show the Edit Section button if the Author is a developer. #938 ^BA
 			if(Administration::instance()->Author->isDeveloper()) {
 				$this->appendSubheading($title,
-					Widget::Anchor(__('Edit Section'), SYMPHONY_URL . '/blueprints/sections/edit/' . $section_id, __('Edit Section Configuration'), 'button')
+					Widget::Anchor(__('Edit Section'), SYMPHONY_URL . '/blueprints/sections/edit/' . $section_id . '/', __('Edit Section Configuration'), 'button')
 				);
 			}
 			else {
@@ -864,7 +954,7 @@
 			}
 
 			$this->insertBreadcrumbs(array(
-				Widget::Anchor($section->get('name'), SYMPHONY_URL . '/publish/' . $this->_context['section_handle']),
+				Widget::Anchor($section->get('name'), SYMPHONY_URL . (isset($filter_link) ? $filter_link : $base)),
 			));
 
 			$this->Form->appendChild(Widget::Input('MAX_FILE_SIZE', Symphony::Configuration()->get('max_upload_size', 'admin'), 'hidden'));
@@ -926,7 +1016,11 @@
 
 			if(@array_key_exists('save', $_POST['action']) || @array_key_exists("done", $_POST['action'])){
 				if(!$ret = EntryManager::fetch($entry_id)) {
-					Administration::instance()->customError(__('Unknown Entry'), __('The entry you are looking for could not be found.'));
+					Administration::instance()->throwCustomError(
+						__('The Entry, %s, could not be found.', array($entry_id)),
+						__('Unknown Entry'),
+						Page::HTTP_STATUS_NOT_FOUND
+					);
 				}
 				$entry = $ret[0];
 

@@ -9,10 +9,10 @@
 	$Page->Html->setDTD('<!DOCTYPE html>');
 	$Page->Html->setAttribute('xml:lang', 'en');
 	$Page->addElementToHead(new XMLElement('meta', NULL, array('http-equiv' => 'Content-Type', 'content' => 'text/html; charset=UTF-8')), 0);
-	$Page->addStylesheetToHead(SYMPHONY_URL . '/assets/css/symphony.css', 'screen', 30);
-	$Page->addStylesheetToHead(SYMPHONY_URL . '/assets/css/symphony.frames.css', 'screen', 31);
+	$Page->addStylesheetToHead(APPLICATION_URL . '/assets/css/symphony.css', 'screen', 30);
+	$Page->addStylesheetToHead(APPLICATION_URL . '/assets/css/symphony.frames.css', 'screen', 31);
 
-	$Page->addHeaderToPage('Status', '500 Internal Server Error', 500);
+	$Page->setHttpStatus($e->getHttpStatusCode());
 	$Page->addHeaderToPage('Content-Type', 'text/html; charset=UTF-8');
 	$Page->addHeaderToPage('Symphony-Error-Type', 'xslt');
 
@@ -92,7 +92,7 @@
 
 						// Error
 						if(!empty($class)) {
-							if(strpos($data[$index + 3]['message'], $parts[1]) === false) {
+							if(isset($data[$index + 3]) && !empty($parts[1]) && strpos($data[$index + 3]['message'], $parts[1]) === false) {
 								$position = explode('(): ', $data[$index + 1]['message']);
 								$length = max(0, strlen($position[1]) - 1);
 								$list->appendChild(
@@ -103,14 +103,16 @@
 									)
 								);
 
-								// Show in debug
-								$filename = explode(WORKSPACE . '/', $file);
-								$list->appendChild(
-									new XMLElement(
-										'li',
-										'<code>&#160;&#160;&#160;&#160;<a href="?debug=/workspace/' . $filename[1] . '#line-' . $line .'" title="' . __('Show debug view for %s', array($filename[1])) . '">' . __('Show line %d in debug view', array($line)) . '</a></code>'
-									)
-								);
+								if(isset($file, $line)) {
+									// Show in debug
+									$filename = explode(WORKSPACE . '/', $file);
+									$list->appendChild(
+										new XMLElement(
+											'li',
+											'<code>&#160;&#160;&#160;&#160;<a href="?debug=/workspace/' . $filename[1] . '#line-' . $line .'" title="' . __('Show debug view for %s', array($filename[1])) . '">' . __('Show line %d in debug view', array($line)) . '</a></code>'
+										)
+									);
+								}
 							}
 						}
 

@@ -33,7 +33,7 @@
 				content:			'.content',
 				ignore:				'.ignore',
 				save_state:			true,
-				storage: 			'symphony.collapsible.' + window.location.href.split(Symphony.Context.get('root') + '/')[1].replace(/\//g, '.')
+				storage:			'symphony.collapsible.' + window.location.href.split(Symphony.Context.get('root') + '/')[1].replace(/\/(edit|new|created|saved)/g, '').replace(/\//g, '.')
 			};
 
 		$.extend(settings, options);
@@ -134,7 +134,14 @@
 							return index;
 						};
 					});
-					window.localStorage[storage] = collapsed.get().join(',');
+
+					// Put in a try/catch incase something goes wrong (no space, privileges etc)
+					try {
+						window.localStorage[storage] = collapsed.get().join(',');
+					}
+					catch(e) {
+						window.onerror(e.message);
+					}
 				}
 			});
 
@@ -171,4 +178,4 @@
 		return objects;
 	};
 
-})(jQuery.noConflict());
+})(window.jQuery);

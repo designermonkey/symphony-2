@@ -211,9 +211,15 @@
 
 			// Store exclusion rule
 			if(Symphony.Support.localStorage === true) {
-				storage = $.parseJSON(window.localStorage[settings.storage]) || [];
-				storage.push(text);
-				window.localStorage[settings.storage] = JSON.stringify(storage);
+				// Put in a try/catch incase we exceed storage space
+				try {
+					storage = $.parseJSON(window.localStorage[settings.storage]) || [];
+					storage.push(text);
+					window.localStorage[settings.storage] = JSON.stringify(storage);
+				}
+				catch(e) {
+					window.onerror(e.message);
+				}
 			}
 
 			// Remove item
@@ -227,7 +233,7 @@
 		// Build interface
 		objects.each(function initNotify() {
 			var object = $(this),
-				notifier = $('<div class="notifier" />').prependTo(object),
+				notifier = $('<div class="notifier" />').hide().prependTo(object),
 				items = $(object.find(settings.items).get().reverse());
 
 			// Construct notifier
@@ -241,15 +247,12 @@
 				object.trigger('attach.notify', [message, type]);
 			});
 
-			// No messages (based on exclusion list)
-			if(notifier.find(settings.items).length == 0) {
-				notifier.removeClass('constructing').hide();
-			}
-
-			// Finish construction
-			else {
+			// Resize notifier
+			if(notifier.find(settings.items).length > 0) {
 				notifier.removeClass('constructing').trigger('resize.notify');
 			}
+						
+			notifier.removeClass('constructing');
 
 			// Update relative times in system messages
 			setInterval(function updateRelativeTimes() {
@@ -262,4 +265,4 @@
 		return objects;
 	};
 
-})(jQuery.noConflict());
+})(window.jQuery);

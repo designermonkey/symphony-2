@@ -159,7 +159,7 @@
 			$return = array();
 			self::__buildExtensionList();
 
-			if(array_key_exists($about['handle'], self::$_extensions)) {
+			if(isset($about['handle']) && array_key_exists($about['handle'], self::$_extensions)) {
 				if(self::$_extensions[$about['handle']]['status'] == 'enabled')
 					$return[] = EXTENSION_ENABLED;
 				else
@@ -169,7 +169,7 @@
 				$return[] = EXTENSION_NOT_INSTALLED;
 			}
 
-			if(self::__requiresUpdate($about['handle'], $about['version'])) {
+			if(isset($about['handle']) && self::__requiresUpdate($about['handle'], $about['version'])) {
 				$return[] = EXTENSION_REQUIRES_UPDATE;
 			}
 
@@ -292,7 +292,10 @@
 			$obj = self::getInstance($name);
 
 			// If not installed, install it
-			if(self::__requiresInstallation($name) && $obj->install() === false){
+			if(self::__requiresInstallation($name) && $obj->install() === false) {
+				// If the installation failed, run the uninstall method which
+				// should rollback the install method. #1326
+				$obj->uninstall();
 				return false;
 			}
 
@@ -369,7 +372,10 @@
 		 * Uninstalling an extension will unregister all delegate subscriptions and
 		 * remove all extension settings. Symphony checks that an extension can
 		 * be uninstalled using the `canUninstallorDisable()` before calling
-		 * the extension's `uninstall()` function.
+		 * the extension's `uninstall()` function. Alternatively, if this function
+		 * is called because the extension described by `$name` cannot be found
+		 * it's delegates and extension meta information will just be removed from the
+		 * database.
 		 *
 		 * @see toolkit.ExtensionManager#removeDelegates()
 		 * @see toolkit.ExtensionManager#__canUninstallOrDisable()
@@ -377,16 +383,26 @@
 		 *  The name of the Extension Class minus the extension prefix.
 		 * @return boolean
 		 */
-		public static function uninstall($name){
-			$obj = self::getInstance($name);
-
-			self::__canUninstallOrDisable($obj);
-
-			$obj->uninstall();
+		public static function uninstall($name) {
+			// If this function is called because the extension doesn't exist,
+			// then catch the error and just remove from the database. This
+			// means that the uninstall() function will not run on the extension,
+			// which may be a blessing in disguise as no entry data will be removed
+			try {
+				$obj = self::getInstance($name);
+				self::__canUninstallOrDisable($obj);
+				$obj->uninstall();
+			}
+			catch(SymphonyErrorPage $ex) {
+				// Create a consistant key
+				$key = str_replace('-', '_', $ex->getTemplateName());
+				if($key !== 'missing_extension') {
+					throw $ex;
+				}
+			}
 
 			self::removeDelegates($name);
-
-			Symphony::Database()->delete('tbl_extensions', " `name` = '$name' ");
+			Symphony::Database()->delete('tbl_extensions', sprintf(" `name` = '%s' ", $name));
 
 			return true;
 		}
@@ -424,18 +440,19 @@
 			}
 
 			// Remove the unused DB records
-			self::__cleanupDatabase();
+			self::cleanupDatabase();
 
 			return $id;
 		}
 
 		/**
 		 * This function will remove all delegate subscriptions for an extension
-		 * given an extension's name. This triggers `__cleanupDatabase()`
+		 * given an extension's name. This triggers `cleanupDatabase()`
 		 *
-		 * @see toolkit.ExtensionManager#__cleanupDatabase()
+		 * @see toolkit.ExtensionManager#cleanupDatabase()
 		 * @param string $name
 		 *  The name of the Extension Class minus the extension prefix.
+		 * @return boolean
 		 */
 		public static function removeDelegates($name){
 			$classname = self::__getClassName($name);
@@ -457,7 +474,7 @@
 			}
 
 			// Remove the unused DB records
-			self::__cleanupDatabase();
+			self::cleanupDatabase();
 
 			return true;
 		}
@@ -550,7 +567,6 @@
 		 *		'page' => $page,
 		 *		'delegate' => $delegate
 		 *	);
-		 *
 		 */
 		public static function notifyMembers($delegate, $page, array $context=array()){
 			// Make sure $page is an array
@@ -575,12 +591,21 @@
 
 			$context += array('page' => $page, 'delegate' => $delegate);
 
-			foreach($services as $s){
-				$obj = self::getInstance($s['name']);
+			foreach($services as $s) {
+				// Initial seeding and query count
+				Symphony::Profiler()->seed();
+				$queries = Symphony::Database()->queryCount();
 
+				// Get instance of extension and execute the callback passing
+				// the `$context` along
+				$obj = self::getInstance($s['name']);
 				if(is_object($obj) && method_exists($obj, $s['callback'])) {
 					$obj->{$s['callback']}($context);
 				}
+
+				// Complete the Profiling sample
+				$queries = Symphony::Database()->queryCount() - $queries;
+				Symphony::Profiler()->sample($delegate . '|' . $s['name'], PROFILE_LAP, 'Delegate', $queries);
 			}
 		}
 
@@ -696,11 +721,11 @@
 				}
 				else if($sort == 'name'){
 					foreach($extensions as $key => $about){
-						$name[$key] = $about['name'];
+						$name[$key] = strtolower($about['name']);
 						$label[$key] = $key;
 					}
 
-					array_multisort($name, $order, $label, SORT_ASC, $extensions);
+					array_multisort($name, $order, $label, $order, $extensions);
 				}
 
 			}
@@ -757,18 +782,27 @@
 					}
 				}
 				catch (Exception $ex) {
-					throw new SymphonyErrorPage(__('The %1$s file for the %2$s extension is not valid XML: %3$s', array(
-						'<code>extension.meta.xml</code>',
-						'<code>' . $name . '</code>',
-						'<br /><code>' . $ex->getMessage() . '</code>'
-					)));
+					Symphony::Engine()->throwCustomError(
+						__('The %1$s file for the %2$s extension is not valid XML: %3$s', array(
+							'<code>extension.meta.xml</code>',
+							'<code>' . $name . '</code>',
+							'<br /><code>' . $ex->getMessage() . '</code>'
+						))
+					);
+				}
+
+				// Load <extension>
+				$extension = $xpath->query('/ext:extension')->item(0);
+
+				// Check to see that the extension is named correctly, if it is
+				// not, then return nothing
+				if(self::__getClassName($name) != self::__getClassName($xpath->evaluate('string(@id)', $extension))) {
+					return array();
 				}
 
 				// If `$rawXML` is set, just return our DOMDocument instance
 				if($rawXML) return $meta;
 
-				// Load <extension>
-				$extension = $xpath->query('/ext:extension')->item(0);
 				$about = array(
 					'name' => $xpath->evaluate('string(ext:name)', $extension),
 					'status' => array()
@@ -795,6 +829,12 @@
 					$required_min_version = $xpath->evaluate('string(@min)', $release);
 					$required_max_version = $xpath->evaluate('string(@max)', $release);
 					$current_symphony_version = Symphony::Configuration()->get('version', 'symphony');
+
+					// Munge the version number so that it makes sense in the backend.
+					// Consider, 2.3.x. As the min version, this means 2.3 onwards,
+					// for the max it implies any 2.3 release. RE: #1019
+					$required_min_version = str_replace('.x', '', $required_min_version);
+					$required_max_version = str_replace('.x', 'p', $required_max_version);
 
 					// Min version
 					if(!empty($required_min_version) &&
@@ -857,12 +897,19 @@
 				$classname = self::__getClassName($name);
 				$path = self::__getDriverPath($name);
 
-				if(!is_file($path)){
-					throw new SymphonyErrorPage(
-						__('Could not find extension %s at location %s', array(
+				if(!is_file($path)) {
+					Symphony::Engine()->throwCustomError(
+						__('Could not find extension %s at location %s.', array(
 							'<code>' . $name . '</code>',
 							'<code>' . $path . '</code>'
-						))
+						)),
+						__('Symphony Extension Missing Error'),
+						Page::HTTP_STATUS_ERROR,
+						'missing_extension',
+						array(
+							'name' => $name,
+							'path' => $path
+						)
 					);
 				}
 
@@ -880,7 +927,7 @@
 		 * stray delegates are not in `tbl_extensions_delegates`. It is called when
 		 * a new Delegate is added or removed.
 		 */
-		private static function __cleanupDatabase(){
+		public static function cleanupDatabase() {
 			// Grab any extensions sitting in the database
 			$rows = Symphony::Database()->fetch("SELECT `name` FROM `tbl_extensions`");
 
@@ -888,6 +935,7 @@
 			if(is_array($rows) && !empty($rows)){
 				foreach($rows as $r){
 					$name = $r['name'];
+					$status = isset($r['status']) ? $r['status'] : null;
 
 					// Grab the install location
 					$path = self::__getClassPath($name);
@@ -898,7 +946,7 @@
 						Symphony::Database()->delete("tbl_extensions_delegates", " `extension_id` = $existing_id ");
 						Symphony::Database()->delete('tbl_extensions', " `id` = '$existing_id' LIMIT 1");
 					}
-					elseif ($r['status'] == 'disabled') {
+					elseif ($status == 'disabled') {
 						Symphony::Database()->delete("tbl_extensions_delegates", " `extension_id` = $existing_id ");
 					}
 				}

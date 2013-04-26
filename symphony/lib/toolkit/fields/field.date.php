@@ -3,15 +3,17 @@
 	/**
 	 * @package toolkit
 	 */
+
+	require_once FACE . '/interface.exportablefield.php';
+	require_once FACE . '/interface.importablefield.php';
+
 	/**
 	 * A simple Date field that stores a full ISO date. Symphony will attempt
 	 * to localize the date on a per Author basis. The field essentially maps to
 	 * PHP's `strtotime`, so it is very flexible in terms of what an Author can
 	 * input into it.
 	 */
-
-	Class fieldDate extends Field{
-
+	class FieldDate extends Field implements ExportableField, ImportableField {
 		const SIMPLE = 0;
 		const REGEXP = 1;
 		const RANGE = 3;
@@ -22,8 +24,10 @@
 		public function __construct() {
 			parent::__construct();
 			$this->_name = __('Date');
+			$this->_required = true;
 			$this->key = 1;
 
+			$this->set('required', 'no');
 			$this->set('location', 'sidebar');
 		}
 
@@ -32,10 +36,6 @@
 	-------------------------------------------------------------------------*/
 
 		public function canFilter() {
-			return true;
-		}
-
-		public function canImport() {
 			return true;
 		}
 
@@ -199,13 +199,15 @@
 				$later = $parts['end'];
 
 				// Switch between earlier than and later than logic
+				// The earlier/later range is defined by MySQL's support. RE: #1560
+				// @link http://dev.mysql.com/doc/refman/5.0/en/datetime.html
 				switch($match[2]) {
 					case 'later':
-						$string = $later . ' to 2038-01-01 23:59:59';
+						$string = $later . ' to 9999-12-31 23:59:59';
 						break;
 
 					case 'earlier':
-						$string = '0000-01-01 to ' . $earlier;
+						$string = '1000-01-01 00:00:00 to ' . $earlier;
 						break;
 				}
 			}
@@ -302,6 +304,11 @@
 			parent::displaySettingsPanel($wrapper, $errors);
 
 			$div = new XMLElement('div', NULL, array('class' => 'two columns'));
+			$this->appendRequiredCheckbox($div);
+			$this->appendShowColumnCheckbox($div);
+			$wrapper->appendChild($div);
+
+			$div = new XMLElement('div', NULL, array('class' => 'two columns'));
 
 			$label = Widget::Label();
 			$label->setAttribute('class', 'column');
@@ -310,7 +317,6 @@
 			$label->setValue(__('%s Pre-populate with current date', array($input->generate())));
 			$div->appendChild($label);
 
-			$this->appendShowColumnCheckbox($div);
 			$wrapper->appendChild($div);
 		}
 
@@ -337,7 +343,7 @@
 			$value = null;
 
 			// New entry
-			if(is_null($data) && is_null($flagWithError) && $this->get('pre_populate') == 'yes') {
+			if((is_null($data) || empty($data)) && is_null($flagWithError) && $this->get('pre_populate') == 'yes') {
 				$value = DateTimeObj::format('now', DateTimeObj::getSetting('datetime_format'));
 			}
 
@@ -352,6 +358,7 @@
 			}
 
 			$label = Widget::Label($this->get('label'));
+			if($this->get('required') != 'yes') $label->appendChild(new XMLElement('i', __('Optional')));
 			$label->appendChild(Widget::Input("fields{$fieldnamePrefix}[{$name}]", $value));
 			$label->setAttribute('class', 'date');
 
@@ -363,8 +370,16 @@
 		}
 
 		public function checkPostFieldData($data, &$message, $entry_id=NULL) {
-			if(empty($data)) return self::__OK__;
 			$message = NULL;
+
+			// If this field is required
+			if($this->get('required') == 'yes' && strlen(trim($data)) == 0){
+				$message = __('‘%s’ is a required field.', array($this->get('label')));
+				return self::__MISSING_FIELDS__;
+			}
+			else if(empty($data)) {
+				return self::__OK__;
+			}
 
 			// Handle invalid dates
 			if(!DateTimeObj::validate($data)) {
@@ -395,7 +410,7 @@
 			if(!is_null($timestamp)) {
 				return array(
 					'value' => DateTimeObj::get('c', $timestamp),
-					'date' => DateTimeObj::getGMT('c', $timestamp)
+					'date' => DateTimeObj::getGMT('Y-m-d H:i:s', $timestamp)
 				);
 			}
 
@@ -440,6 +455,102 @@
 
 		public function getParameterPoolValue(array $data, $entry_id=NULL){
 			return DateTimeObj::get('Y-m-d H:i:s', $data['value']);
+		}
+
+	/*-------------------------------------------------------------------------
+		Import:
+	-------------------------------------------------------------------------*/
+
+		public function getImportModes() {
+			return array(
+				'getValue' =>		ImportableField::STRING_VALUE,
+				'getPostdata' =>	ImportableField::ARRAY_VALUE
+			);
+		}
+
+		public function prepareImportValue($data, $mode, $entry_id = null) {
+			$value = $status = $message = null;
+			$modes = (object)$this->getImportModes();
+
+			// Prepopulate date:
+			if ($data === null || $data === '') {
+				if ($this->get('pre_populate') == 'yes') {
+					$timestamp = time();
+				}
+			}
+
+			// DateTime to timestamp:
+			else if ($data instanceof DateTime) {
+				$timestamp = $data->getTimestamp();
+			}
+
+			// Convert given date to timestamp:
+			else if (DateTimeObj::validate($data)) {
+				$timestamp = DateTimeObj::get('U', $data);
+			}
+
+			// Valid date found:
+			if (isset($timestamp)) {
+				$value = DateTimeObj::get('c', $timestamp);
+			}
+			
+			if($mode === $modes->getValue) {
+				return $value;
+			}
+			else if($mode === $modes->getPostdata) {
+				return $this->processRawFieldData($data, $status, $message, true, $entry_id);
+			}
+
+			return null;
+		}
+
+	/*-------------------------------------------------------------------------
+		Export:
+	-------------------------------------------------------------------------*/
+
+		/**
+		 * Return a list of supported export modes for use with `prepareExportValue`.
+		 *
+		 * @return array
+		 */
+		public function getExportModes() {
+			return array(
+				'getObject' =>		ExportableField::OBJECT,
+				'getPostdata' =>	ExportableField::POSTDATA
+			);
+		}
+
+		/**
+		 * Give the field some data and ask it to return a value using one of many
+		 * possible modes.
+		 *
+		 * @param mixed $data
+		 * @param integer $mode
+		 * @param integer $entry_id
+		 * @return DateTime|null
+		 */
+		public function prepareExportValue($data, $mode, $entry_id = null) {
+			$modes = (object)$this->getExportModes();
+
+			if ($mode === $modes->getObject) {
+				$timezone = Symphony::Configuration()->get('timezone', 'region');
+				$date = new DateTime(
+					isset($data['value'])
+						? $data['value']
+						: 'now'
+				);
+				$date->setTimezone(new DateTimeZone($timezone));
+
+				return $date;
+			}
+
+			else if ($mode === $modes->getPostdata) {
+				return isset($data['value'])
+					? $data['value']
+					: null;
+			}
+
+			return null;
 		}
 
 	/*-------------------------------------------------------------------------
@@ -488,7 +599,7 @@
 						FROM tbl_entries_data_%d AS `ed`
 						WHERE entry_id = e.id
 					) %s',
-					'`ed`.value',
+					'`ed`.date',
 					$this->get('id'),
 					$order
 				);

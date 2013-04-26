@@ -55,9 +55,8 @@
 						$security = '
 			### SECURITY - Protect crucial files
 			RewriteRule ^manifest/(.*)$ - [F]
-			RewriteRule ^workspace/utilities/(.*).xsl$ - [F]
-			RewriteRule ^workspace/pages/(.*).xsl$ - [F]
-			RewriteRule ^(.*).sql$ - [F]
+			RewriteRule ^workspace/(pages|utilities)/(.*)\.xsl$ - [F]
+			RewriteRule ^(.*)\.sql$ - [F]
 			RewriteRule (^|/)\. - [F]
 
 			### DO NOT APPLY RULES WHEN REQUESTING "favicon.ico"';
@@ -117,13 +116,13 @@
 			// 2.2.1
 			if(version_compare(self::$existing_version, '2.2.1', '<=')) {
 				Symphony::Configuration()->set('version', '2.2.1', 'symphony');
+			}
 
-				if(Symphony::Configuration()->write() === false) {
-					throw new Exception('Failed to write configuration file, please check the file permissions.');
-				}
-				else {
-					return true;
-				}
+			if(Symphony::Configuration()->write() === false) {
+				throw new Exception('Failed to write configuration file, please check the file permissions.');
+			}
+			else {
+				return true;
 			}
 		}
 

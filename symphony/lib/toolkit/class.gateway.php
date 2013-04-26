@@ -100,7 +100,7 @@
 		 * A URL encoded string of the `$_POST` fields, as built by
 		 * http_build_query()
 		 *
-		 * @link http://www.php.net/manual/en/function.http-build-query.php
+		 * @link http://php.net/manual/en/function.http-build-query.php
 		 * @var string
 		 */
 		private $_postfields = '';
@@ -127,7 +127,7 @@
 		 * An array of custom options for the CURL request, this
 		 * can be any option as listed on the PHP manual
 		 *
-		 * @link http://au2.php.net/manual/en/function.curl-setopt.php
+		 * @link http://php.net/manual/en/function.curl-setopt.php
 		 * @var array
 		 */
 		private $_custom_opt = array();
@@ -137,7 +137,7 @@
 		 * been executed. At minimum, regardless of if CURL or Sockets
 		 * are used, the HTTP Code, URL and Content Type will be returned
 		 *
-		 * @link http://au2.php.net/manual/en/function.curl-getinfo.php
+		 * @link http://php.net/manual/en/function.curl-getinfo.php
 		 */
 		private $_info_last = array();
 
@@ -182,7 +182,7 @@
 		 * such as 'URL', which will take a full formatted URL string and set any
 		 * authentication or SSL curl options automatically
 		 *
-		 * @link http://au2.php.net/manual/en/function.curl-setopt.php
+		 * @link http://php.net/manual/en/function.curl-setopt.php
 		 * @param string $opt
 		 *	A string representing a CURL constant. Symphony will intercept the
 		 *	following, URL, POST, POSTFIELDS, USERAGENT, HTTPHEADER,
@@ -243,8 +243,10 @@
 				case 'POSTFIELDS':
 					if(is_array($value) && !empty($value)){
 						$this->_postfields = http_build_query($value);
-					}else
+					}
+					else {
 						$this->_postfields = $value;
+					}
 
 					break;
 
@@ -303,7 +305,7 @@
 				curl_setopt($ch, CURLOPT_USERAGENT, $this->_agent);
 				curl_setopt($ch, CURLOPT_PORT, $this->_port);
 				curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-				curl_setopt($ch, CURLOPT_TIMEOUT, $this->_timeout);
+				curl_setopt($ch, CURLOPT_TIMEOUT, 1);
 
 				if(ini_get('safe_mode') == 0 && ini_get('open_basedir') == '') {
 					curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
@@ -339,6 +341,7 @@
 				$result = curl_exec($ch);
 
 				$this->_info_last = curl_getinfo($ch);
+				$this->_info_last['curl_error'] = curl_errno($ch);
 
 				// Close the connection
 				curl_close ($ch);
@@ -373,6 +376,7 @@
 			stream_set_timeout($handle, $this->_timeout);
 
 			$status = stream_get_meta_data($handle);
+			$response = $dechunked = '';
 
 			// get header
 			while (!preg_match('/\\r\\n\\r\\n$/', $header) && !$status['timed_out']) {
@@ -447,7 +451,7 @@
 		 * the HTTP Code, Content Type, URL and Total Time of the resulting
 		 * request
 		 *
-		 * @link http://au2.php.net/manual/en/function.curl-getinfo.php
+		 * @link http://php.net/manual/en/function.curl-getinfo.php
 		 * @return array
 		 */
 		public function getInfoLast(){

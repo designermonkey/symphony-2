@@ -68,7 +68,7 @@
 			$email_gateway_manager = new EmailGatewayManager($this);
 			$email_gateways = $email_gateway_manager->listAll();
 			if(count($email_gateways) >= 1){
-				$group = new XMLElement('fieldset', NULL, array('class' => 'settings picker'));
+				$group = new XMLElement('fieldset', NULL, array('class' => 'settings condensed'));
 				$group->appendChild(new XMLElement('legend', __('Default Email Settings')));
 				$label = Widget::Label(__('Gateway'));
 
@@ -82,7 +82,7 @@
 				foreach($email_gateways as $handle => $details) {
 					$options[] = array($handle, (($handle == $default_gateway) || (($selected_is_installed == false) && $handle == 'sendmail')), $details['name']);
 				}
-				$select = Widget::Select('settings[Email][default_gateway]', $options);
+				$select = Widget::Select('settings[Email][default_gateway]', $options, array('class' => 'picker'));
 				$label->appendChild($select);
 				$group->appendChild($label);
 				// Append email gateway selection
@@ -128,9 +128,9 @@
 			if (!is_writable(CONFIG)) redirect(SYMPHONY_URL . '/system/preferences/');
 
 			/**
-			 * This is where Extensions can hook on to custom actions they may need to provide
-			 * as a result of adding some custom actions through the `AddCustomPreferenceFieldsets`
-			 * delegate
+			 * Extensions can listen for any custom actions that were added
+			 * through `AddCustomPreferenceFieldsets` or `AddCustomActions`
+			 * delegates.
 			 *
 			 * @delegate CustomActions
 			 * @param string $context
@@ -157,12 +157,8 @@
 
 				if (!is_array($this->_errors) || empty($this->_errors)) {
 
-					if(is_array($settings) && !empty($settings)){
-						foreach($settings as $set => $values) {
-							foreach($values as $key => $val) {
-								Symphony::Configuration()->set($key, $val, $set);
-							}
-						}
+					if(is_array($settings) && !empty($settings)) {
+						Symphony::Configuration()->setArray($settings, false);
 					}
 
 					Symphony::Configuration()->write();

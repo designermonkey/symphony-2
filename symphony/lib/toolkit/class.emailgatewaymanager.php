@@ -26,11 +26,12 @@
 		 * Sets the default gateway.
 		 * Will throw an exception if the gateway can not be found.
 		 *
+		 * @throws EmailGatewayException
 		 * @param string $name
 		 * @return void
 		 */
 		public static function setDefaultGateway($name){
-			if($this->__getClassPath($name)){
+			if(self::__getClassPath($name)){
 				Symphony::Configuration()->set('default_gateway', $name, 'Email');
 				Symphony::Configuration()->write();
 			}
@@ -123,7 +124,6 @@
 		 * @return array
 		 */
 		public static function listAll(){
-
 			$result = array();
 
 			$structure = General::listStructure(EMAILGATEWAYS, '/email.[\\w-]+.php/', false, 'ASC', EMAILGATEWAYS);
@@ -158,6 +158,7 @@
 		}
 
 		public static function about($name) {
+			$name = strtolower($name);
 			$classname = self::__getClassName($name);
 			$path = self::__getDriverPath($name);
 
@@ -183,6 +184,7 @@
 		 *  If the gateway is not found, an error is triggered.
 		 */
 		public static function create($name){
+			$name = strtolower($name);
 			$classname = self::__getClassName($name);
 			$path = self::__getDriverPath($name);
 

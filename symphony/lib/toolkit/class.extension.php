@@ -25,50 +25,9 @@
 		const NAV_CHILD = 0;
 
 		/**
-		 * An associative array of the providers exposed by this extension. The
-		 * only valid key at the moment is `data-sources`, with a value of an
-		 * array of classname's and human readable object names.
-		 *
-		 * @since Symphony 2.3
-		 * @var array
-		 */
-		private static $provides = array();
-
-		/**
 		 * Default constructor for an Extension, at this time it does nothing
 		 */
 		public function __construct() {}
-
-		/**
-		 * Register all the providers that are exposed by this extension. At the
-		 * moment the core only supports `data-sources` objects, but this is
-		 * expected to change in the future
-		 *
-		 * @since Symphony 2.3
-		 * @return boolean
-		 *  This function will always return true (at the moment)
-		 */
-		public static function registerProviders() {
-			return true;
-		}
-
-		/**
-		 * Accessor function determines if this extension provides any objects
-		 * of a given `$type`. If no `$type` is provided, this function will
-		 * return all provider objects.
-		 *
-		 * @since Symphony 2.3
-		 * @param string $type
-		 *  The type of provider object to return, `data-sources` is the only
-		 *  valid type at this time.
-		 * @return array
-		 *  If no providers are found, then an empty array is returned, otherwise
-		 *  an associative array of classname => human name will be returned.
-		 *  eg. `array('RemoteDatasource' => 'Remote Datasource')`
-		 */
-		public static function providerOf($type = null) {
-			return array();
-		}
 
 		/**
 		 * Any logic that assists this extension in being installed such as
@@ -188,30 +147,104 @@
 
 		/**
 		 * When the Symphony navigation is being generated, this method will be
-		 * called to allow extension to inject any custom backend pages into the
-		 * navigation. If an extension wants to create a new group in the navigation
-		 * it is possible by returning an array with the group information and then an
-		 * array of links for this group. The extension can also inject link items into existing
+		 * called to allow extensions to inject any custom backend pages into the
+		 * navigation.
+		 *
+		 * The extension can also inject link items into existing
 		 * group's of the navigation using the 'location' key, which will accept a numeric
-		 * index of the existing group, or the handle of an existing group.  Navigation items
+		 * index of the existing group, or the handle of an existing group. Navigation items
 		 * in Symphony are initially provided from the `ASSETS . /navigation.xml` file
 		 * which defines the default Blueprints and System groups. The indexes for these
-		 * groups are 100 and 200 respectively. Groups cannot provide a link, this is done
-		 * by the children. All links are relative to the Extension by default
-		 * (ie. `EXTENSIONS . /extension_handle/`. An example of a returned navigation
-		 * array is provided below. Note that if an extension wants to edit the current navigation,
-		 * this is not possible through this function and rather it should be done using the
-		 * `NavigationPreRender` delegate.
+		 * groups are 100 and 200 respectively.
 		 *
-		 * `array(
-		 * 	'name' => 'New Group',
+		 * A simple case would look like this.
+		 *
+		 * `return array(
+		 *		array(
+		 *			'name' => 'Extension Name',
+		 *			'link' => '/link/relative/to/extension/handle/',
+		 *			'location' => 200
+		 *		)
+		 *	)
+		 * );`
+		 *
+		 * If an extension wants to create a new group in the navigation
+		 * it is possible by returning an array with the group information and then an
+		 * array of links for this group. Groups cannot provide a link, this is done
+		 * by the children. An example of a returned navigation
+		 * array is provided below.
+		 *
+		 * `return array(
+		 *		'name' => 'New Group',
 		 *		'children' => array(
 		 *			array(
 		 *				'name' => 'Extension Name',
 		 *				'link' => '/link/relative/to/extension/handle/'
 		 *			)
 		 *		)
-		 * )`
+		 * );`
+		 *
+		 * All links are relative to the Extension by default
+		 * (ie. `EXTENSIONS . /extension_handle/`. )
+		 * Set the 'relative' key to false tobe able to create links
+		 * relative to /symphony/.
+		 *
+		 * `return array(
+		 *		array(
+		 *			'name' => 'Extension Name',
+		 *			'link' => '/link/retative/to/symphony/',
+		 *			'relative' => false,
+		 *			'location' => 200
+		 *		)
+		 *	)
+		 * );`
+		 *
+		 * You can also set the `target` attribute on your links via the 'target' attribute.
+		 * This works both on links in standard menus and on child links of groups.
+		 *
+		 * `return array(
+		 *		array(
+		 *			'name' => 'Extension Name',
+		 *			'link' => '/.../',
+		 *			'target' => '_blank'
+		 *		)
+		 *	)
+		 * );`
+		 *
+		 * Links can also be hidden dynamicaly usign two other keys:
+		 * 'visible' and 'limit'. When 'visible' is set to 'no', the link
+		 * will not be rendered. Leave unset or set it dynamycally in order
+		 * to fit your needs
+		 *
+		 * `return array(
+		 *		array(
+		 *			'name' => 'Extension Name',
+		 *			'link' => '/.../',
+		 *			'visible' => $this->shouldWeOrNot() ? 'yes' : 'no'
+		 *		)
+		 *	)
+		 * );`
+		 *
+		 * The 'limit' key is specificaly designed to restrict the rendering process
+		 * of a link if the current user does not have access to it based on its role.
+		 * Symphony supports three basic roles witch are 'author', 'developer' and 'primary'.
+		 *
+		 * Note that setting 'visible' to 'no' will hide the link no matter what.
+		 *
+		 * `return array(
+		 *		array(
+		 *			'name' => 'Developers Only',
+		 *			'link' => '/developers-only/',
+		 *			'limit' => 'developer'
+		 *		)
+		 *	)
+		 * );`
+		 *
+		 * The 'limit' key is also available for navigation groups.
+		 *
+		 * Note that if an extension wants to edit the current navigation,
+		 * this is not possible through this function and rather it should be done using the
+		 * `NavigationPreRender` delegate.
 		 *
 		 * @link http://github.com/symphonycms/symphony-2/blob/master/symphony/assets/navigation.xml
 		 * @return array

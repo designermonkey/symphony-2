@@ -3,11 +3,14 @@
 	/**
 	 * @package toolkit
 	 */
+
+	require_once FACE . '/interface.exportablefield.php';
+	require_once FACE . '/interface.importablefield.php';
+
 	/**
 	 * A simple Textarea field that essentially maps to HTML's `<textarea/>`.
 	 */
-
-	Class fieldTextarea extends Field {
+	Class fieldTextarea extends Field implements ExportableField, ImportableField {
 
 		public function __construct(){
 			parent::__construct();
@@ -24,10 +27,6 @@
 	-------------------------------------------------------------------------*/
 
 		public function canFilter(){
-			return true;
-		}
-
-		public function canImport(){
 			return true;
 		}
 
@@ -54,6 +53,8 @@
 	-------------------------------------------------------------------------*/
 
 		protected function __applyFormatting($data, $validate=false, &$errors=NULL){
+			$result = '';
+
 			if($this->get('formatter')) {
 				$formatter = TextformatterManager::create($this->get('formatter'));
 				$result = $formatter->run($data);
@@ -131,7 +132,8 @@
 			$label = Widget::Label($this->get('label'));
 			if($this->get('required') != 'yes') $label->appendChild(new XMLElement('i', __('Optional')));
 
-			$textarea = Widget::Textarea('fields'.$fieldnamePrefix.'['.$this->get('element_name').']'.$fieldnamePostfix, (int)$this->get('size'), 50, (strlen($data['value']) != 0 ? General::sanitize($data['value']) : NULL));
+			$value = isset($data['value']) ? $data['value'] : null;
+			$textarea = Widget::Textarea('fields'.$fieldnamePrefix.'['.$this->get('element_name').']'.$fieldnamePostfix, (int)$this->get('size'), 50, (strlen($value) != 0 ? General::sanitize($value) : null));
 
 			if($this->get('formatter') != 'none') $textarea->setAttribute('class', $this->get('formatter'));
 
@@ -207,7 +209,10 @@
 		}
 
 		public function appendFormattedElement(XMLElement &$wrapper, $data, $encode = false, $mode = null, $entry_id = null) {
-			if ($mode == null || $mode == 'formatted') {
+			$attributes = array();
+			if (!is_null($mode)) $attributes['mode'] = $mode;
+
+			if ($mode == 'formatted') {
 				if ($this->get('formatter') && isset($data['value_formatted'])) {
 					$value = $data['value_formatted'];
 				}
@@ -215,9 +220,6 @@
 				else {
 					$value = $this->__replaceAmpersands($data['value']);
 				}
-
-				$attributes = array();
-				if ($mode == 'formatted') $attributes['mode'] = $mode;
 
 				$wrapper->appendChild(
 					new XMLElement(
@@ -227,17 +229,102 @@
 					)
 				);
 			}
-			else if ($mode == 'unformatted') {
+			else if ($mode == null || $mode == 'unformatted') {
 				$wrapper->appendChild(
 					new XMLElement(
 						$this->get('element_name'),
 						sprintf('<![CDATA[%s]]>', str_replace(']]>',']]]]><![CDATA[>',$data['value'])),
-						array(
-							'mode' => $mode
-						)
+						$attributes
 					)
 				);
 			}
+		}
+
+	/*-------------------------------------------------------------------------
+		Import:
+	-------------------------------------------------------------------------*/
+
+		public function getImportModes() {
+			return array(
+				'getValue' =>		ImportableField::STRING_VALUE,
+				'getPostdata' =>	ImportableField::ARRAY_VALUE
+			);
+		}
+
+		public function prepareImportValue($data, $mode, $entry_id = null) {
+			$message = $status = null;
+			$modes = (object)$this->getImportModes();
+
+			if($mode === $modes->getValue) {
+				return $data;
+			}
+			else if($mode === $modes->getPostdata) {
+				return $this->processRawFieldData($data, $status, $message, true, $entry_id);
+			}
+
+			return null;
+		}
+
+	/*-------------------------------------------------------------------------
+		Export:
+	-------------------------------------------------------------------------*/
+
+		/**
+		 * Return a list of supported export modes for use with `prepareExportValue`.
+		 *
+		 * @return array
+		 */
+		public function getExportModes() {
+			return array(
+				'getHandle' =>		ExportableField::HANDLE,
+				'getFormatted' =>	ExportableField::FORMATTED,
+				'getUnformatted' =>	ExportableField::UNFORMATTED,
+				'getPostdata' =>	ExportableField::POSTDATA
+			);
+		}
+
+		/**
+		 * Give the field some data and ask it to return a value using one of many
+		 * possible modes.
+		 *
+		 * @param mixed $data
+		 * @param integer $mode
+		 * @param integer $entry_id
+		 * @return string|null
+		 */
+		public function prepareExportValue($data, $mode, $entry_id = null) {
+			$modes = (object)$this->getExportModes();
+
+			// Export handles:
+			if ($mode === $modes->getHandle) {
+				if (isset($data['handle'])) {
+					return $data['handle'];
+				}
+
+				else if (isset($data['value'])) {
+					return General::createHandle($data['value']);
+				}
+			}
+
+			// Export unformatted:
+			else if ($mode === $modes->getUnformatted || $mode === $modes->getPostdata) {
+				return isset($data['value'])
+					? $data['value']
+					: null;
+			}
+
+			// Export formatted:
+			else if ($mode === $modes->getFormatted) {
+				if (isset($data['value_formatted'])) {
+					return $data['value_formatted'];
+				}
+
+				else if (isset($data['value'])) {
+					return General::sanitize($data['value']);
+				}
+			}
+
+			return null;
 		}
 
 	/*-------------------------------------------------------------------------
