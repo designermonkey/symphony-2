@@ -43,7 +43,7 @@
 			'Untitled Field': false,
 			'The field “{$title}” ({$type}) has been removed.': false,
 			'Undo?': false,
-			'unnamed': false,
+			'untitled': false,
 			'Expand all fields': false,
 			'Collapse all fields': false
 		});
@@ -581,7 +581,7 @@
 			// Update output parameters
 			dsParams.on('update.admin', function updateDsParams() {
 				var params = $(this),
-					handle = dsName.data('handle') || Symphony.Language.get('unnamed');
+					handle = dsName.data('handle') || Symphony.Language.get('untitled');
 
 				// Process parameters
 				if(parseInt(dsName.attr('data-updated')) !== 0) {
