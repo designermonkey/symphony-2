@@ -672,7 +672,11 @@
 			});
 
 			// Enable parameter suggestions
-			contents.find('.duplicator:has(.filters-duplicator)').symphonySuggestions();
+			contents.find('.duplicator:has(.filters-duplicator)').add(dsMaxRecord.parent()).add(dsPageNumber.parent()).symphonySuggestions();
+			contents.find('label:has(input[name*="url_param"])').symphonySuggestions({
+				trigger: '$',
+				source: '/symphony/ajax/parameters/?filter=page&template=$%s'
+			});
 		}
 
 	/*--------------------------------------------------------------------------
