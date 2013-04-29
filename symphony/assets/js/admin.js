@@ -43,7 +43,7 @@
 			'Untitled Field': false,
 			'The field “{$title}” ({$type}) has been removed.': false,
 			'Undo?': false,
-			'unnamed': false,
+			'untitled': false,
 			'Expand all fields': false,
 			'Collapse all fields': false
 		});
@@ -581,7 +581,7 @@
 			// Update output parameters
 			dsParams.on('update.admin', function updateDsParams() {
 				var params = $(this),
-					handle = dsName.data('handle') || Symphony.Language.get('unnamed');
+					handle = dsName.data('handle') || Symphony.Language.get('untitled');
 
 				// Process parameters
 				if(parseInt(dsName.attr('data-updated')) !== 0) {
@@ -602,7 +602,7 @@
 			contents.find('select.filtered > optgroup').each(function() {
 				var optgroup = $(this),
 					select = optgroup.parents('select'),
-					label = optgroup.attr('label'),
+					label = optgroup.attr('data-label'),
 					options = optgroup.remove().find('option').addClass('optgroup');
 
 				// Fix for Webkit browsers to initially show the options
@@ -611,8 +611,11 @@
 				}
 
 				// Show only relevant options based on context
-				$('#ds-context').on('change.admin', function() {
-					if($(this).find('option:selected').text() == label) {
+				contents.find('#ds-context').on('change.admin', function() {
+					var option = $(this).find('option:selected'),
+						context = option.attr('data-context') || 'section-' + option.val();
+
+					if(context == label) {
 						select.find('option.optgroup').remove();
 						select.append(options.clone(true));
 					}
@@ -620,29 +623,26 @@
 			});
 
 			// Data source manager context
-			contents.find('.contextual').each(function() {
-				var area = $(this);
-
-				$('#ds-context').on('change.admin', function() {
-					var select = $(this),
-						optgroup = select.find('option:selected').parent(),
-						value = select.val().replace(/\W+/g, '_'),
-						group = optgroup.data('label') || optgroup.attr('label').replace(/\W+/g, '_');
-
-					// Show only relevant interface components based on context
-					area[(area.hasClass(value) || area.hasClass(group)) ^ area.hasClass('inverse') ? 'removeClass' : 'addClass']('irrelevant');
-				});
-			});
-
-			// Trigger the parameter name being remembered when the Datasource context changes
 			contents.find('#ds-context')
 				.on('change.admin', function() {
+					var select = $(this),
+						optgroup = select.find('option:selected').parent(),
+						label = optgroup.attr('data-label') || optgroup.attr('label'),
+						context = select.find('option:selected').attr('data-context') || 'section-' + select.val();
+
+					// Show only relevant interface components based on context
+					contents.find('.contextual').addClass('irrelevant');
+					contents.find('.contextual').filter('[data-context~=' + label + ']').removeClass('irrelevant');
+					contents.find('.contextual').filter('[data-context~=' + context + ']').removeClass('irrelevant');
+
+					// Make sure parameter names are up-to-date
 					contents.find('input[name="fields[name]"]').trigger('blur.admin');
 				})
 				.trigger('change.admin');
 
 			// Once pagination is disabled, dsMaxRecords and dsPageNumber are disabled too
 			contents.find('input[name*=paginate_results]').on('change.admin', function(event) {
+
 				// Look within the existing context to ensure that these actions only fire
 				// on the active Datasource type
 				var $paginate_results = $(this),
@@ -672,7 +672,11 @@
 			});
 
 			// Enable parameter suggestions
-			contents.find('.duplicator:has(.filters-duplicator)').symphonySuggestions();
+			contents.find('.duplicator:has(.filters-duplicator)').add(dsMaxRecord.parent()).add(dsPageNumber.parent()).symphonySuggestions();
+			contents.find('label:has(input[name*="url_param"])').symphonySuggestions({
+				trigger: '$',
+				source: '/symphony/ajax/parameters/?filter=page&template=$%s'
+			});
 		}
 
 	/*--------------------------------------------------------------------------
