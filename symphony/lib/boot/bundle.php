@@ -32,13 +32,14 @@
 
 	if (!file_exists(CONFIG)) {
 
-		if (file_exists(DOCROOT . '/install/index.php')) {
+		$bInsideInstaller = (bool)preg_match('%(/|\\\\)install(/|\\\\)index.php$%', $_SERVER['SCRIPT_FILENAME']);
+
+		if (!$bInsideInstaller && file_exists(DOCROOT . '/install/index.php')) {
 			header(sprintf('Location: %s/install/', URL));
 			exit;
 		}
 
-		die('<h2>Error</h2><p>Could not locate Symphony configuration file. Please check <code>manifest/config.xml</code> exists.</p>');
+		else if(!$bInsideInstaller) {
+			die('<h2>Error</h2><p>Could not locate Symphony configuration file. Please check <code>manifest/config.php</code> exists.</p>');
+		}
 	}
-
-	require_once(DOCROOT . '/symphony/lib/core/class.configuration.php');
-	$Configuration = new Configuration(true);

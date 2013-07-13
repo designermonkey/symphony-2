@@ -65,7 +65,7 @@
 			}
 
 			// Get available EmailGateways
-			$email_gateway_manager = new EmailGatewayManager($this);
+			$email_gateway_manager = new EmailGatewayManager;
 			$email_gateways = $email_gateway_manager->listAll();
 			if(count($email_gateways) >= 1){
 				$group = new XMLElement('fieldset', NULL, array('class' => 'settings condensed'));
@@ -157,7 +157,7 @@
 
 				if (!is_array($this->_errors) || empty($this->_errors)) {
 
-					if(is_array($settings) && !empty($settings)){
+					if(is_array($settings) && !empty($settings)) {
 						Symphony::Configuration()->setArray($settings, false);
 					}
 
